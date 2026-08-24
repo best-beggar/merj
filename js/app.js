@@ -5,6 +5,33 @@
 (function(){
   "use strict";
 
+  /* ---------------- Illustrated avatars ----------------
+     No real people's photos are used for mock/demo profiles: stock-photo licenses generally
+     exclude "sensitive use" contexts like dating apps, and putting a real identifiable face on
+     a fake profile risks implying that person uses/endorses the platform. These are original,
+     generated illustrations instead — safe to ship, no license or likeness concerns. */
+  const HAIR_SHAPES = {
+    short: hair => `<path d="M18 46 C18 20 82 20 82 46 L82 34 C82 14 18 14 18 34 Z" fill="${hair}"/>`,
+    long:  hair => `<path d="M15 96 C10 40 20 14 50 14 C80 14 90 40 85 96 L72 96 C76 55 68 30 50 30 C32 30 24 55 28 96 Z" fill="${hair}"/>`,
+    curly: hair => `<circle cx="28" cy="34" r="13" fill="${hair}"/><circle cx="50" cy="18" r="15" fill="${hair}"/><circle cx="72" cy="34" r="13" fill="${hair}"/><circle cx="38" cy="22" r="12" fill="${hair}"/><circle cx="62" cy="22" r="12" fill="${hair}"/>`,
+    bun:   hair => `<path d="M18 46 C18 20 82 20 82 46 L82 36 C82 16 18 16 18 36 Z" fill="${hair}"/><circle cx="50" cy="10" r="9" fill="${hair}"/>`,
+    beard: hair => `<path d="M22 50 C22 24 78 24 78 50 L78 38 C78 18 22 18 22 38 Z" fill="${hair}"/><path d="M28 62 C28 82 72 82 72 62 L70 48 C70 68 30 68 30 48 Z" fill="${hair}"/>`,
+    bald:  ()   => ``,
+  };
+
+  function personSVG({ bg, skin, hair, style, top }){
+    const svg = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100" height="100" fill="${bg}"/>
+      <path d="M8 100 C8 66 28 60 50 60 C72 60 92 66 92 100 Z" fill="${top}"/>
+      <circle cx="50" cy="46" r="24" fill="${skin}"/>
+      ${(HAIR_SHAPES[style] || HAIR_SHAPES.short)(hair)}
+      <circle cx="41" cy="48" r="2.6" fill="#33222b"/>
+      <circle cx="59" cy="48" r="2.6" fill="#33222b"/>
+      <path d="M42 58 Q50 64 58 58" stroke="#33222b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    </svg>`;
+    return "data:image/svg+xml," + encodeURIComponent(svg);
+  }
+
   /* ---------------- Mock data ---------------- */
   const REASON_OPTIONS = ["No strings fun","Same day sex","Just friends","Long term","Dinner dates","Video chat fun"];
 
@@ -36,6 +63,24 @@
     { id:102, name:"Tom", age:32, distance:11, initial:"T" },
     { id:103, name:"Zara", age:29, distance:7, initial:"Z" },
   ];
+
+  const AVATAR_PARAMS = {
+    1:   { bg:"#ffe3ec", skin:"#f2c9a4", hair:"#4b2e1d", style:"long",  top:"#d6538c" },
+    2:   { bg:"#e6f0ff", skin:"#e3a978", hair:"#1c1c1c", style:"short", top:"#4c6ef5" },
+    3:   { bg:"#fff1e0", skin:"#c98a5b", hair:"#14110f", style:"long",  top:"#ff922b" },
+    4:   { bg:"#e6f7ef", skin:"#e8b892", hair:"#6b4423", style:"curly", top:"#37b24d" },
+    5:   { bg:"#f3e8ff", skin:"#f4d3b0", hair:"#a13d63", style:"bun",   top:"#9b5cff" },
+    6:   { bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", style:"beard", top:"#495057" },
+    7:   { bg:"#ffe8e8", skin:"#f0c8a0", hair:"#2e1a0f", style:"curly", top:"#ff6b6b" },
+    8:   { bg:"#e3fbf3", skin:"#c98a5b", hair:"#17110c", style:"short", top:"#12b886" },
+    101: { bg:"#fdeaf3", skin:"#f2c9a4", hair:"#3a2317", style:"long",  top:"#ff8fab" },
+    102: { bg:"#eaf1ff", skin:"#e8b892", hair:"#241f1c", style:"short", top:"#5c7cfa" },
+    103: { bg:"#f6ecff", skin:"#caa06f", hair:"#171310", style:"curly", top:"#b197fc" },
+    female1: { bg:"#ffe3ec", skin:"#f2c9a4", hair:"#26140c", style:"long",  top:"#ff3b6e" },
+    male1:   { bg:"#f3e8ff", skin:"#e8b892", hair:"#1c1c1c", style:"short", top:"#9b5cff" },
+  };
+  PROFILES.forEach(p => { const a = AVATAR_PARAMS[p.id]; if(a) p.photoUri = personSVG(a); });
+  LIKES_RECEIVED.forEach(p => { const a = AVATAR_PARAMS[p.id]; if(a) p.photoUri = personSVG(a); });
 
   /* ---------------- State ---------------- */
   const state = {
@@ -73,6 +118,13 @@
   const $ = (sel, root) => (root||document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root||document).querySelectorAll(sel));
 
+  function avatarHtml(profile, extraClass){
+    const cls = "avatar" + (extraClass ? " " + extraClass : "");
+    return profile.photoUri
+      ? `<div class="${cls}" style="background-image:url('${profile.photoUri}')"></div>`
+      : `<div class="${cls}">${profile.initial}</div>`;
+  }
+
   function toast(msg, ms){
     const t = $("#toast");
     t.textContent = msg;
@@ -108,19 +160,7 @@
 
   document.addEventListener("click", (e)=>{
     const navBtn = e.target.closest("[data-nav]");
-    if(navBtn){
-      const target = navBtn.dataset.nav;
-      if(target === "onboarding" && state.screen === "landing"){
-        showScreen("onboarding");
-        return;
-      }
-      showScreen(target);
-    }
-    const demoBtn = e.target.closest('[data-action="demo"]');
-    if(demoBtn){
-      if(state.deck.length && state.ob.username === "") state.ob.username = "Guest";
-      showScreen("discover");
-    }
+    if(navBtn) showScreen(navBtn.dataset.nav);
   });
 
   /* ---------------- Onboarding ---------------- */
@@ -248,6 +288,60 @@
     showScreen("discover");
   }
 
+  /* ---------------- Demo stakeholder logins ----------------
+     Two hardcoded accounts so stakeholders can see a populated profile/matches/chat instantly
+     without running through full signup. Not real auth — just a prototype convenience. */
+  const DEMO_ACCOUNTS = {
+    female1: {
+      password: "femtest",
+      username: "Ciara Doyle",
+      bio: "Sea swims, bad puns, and an unreasonable number of houseplants.",
+      reasons: ["Dinner dates", "Long term"],
+      ageVerified: true,
+      idVerified: false,
+      seedMatchId: 4, // Jordan
+    },
+    male1: {
+      password: "maletest",
+      username: "Darragh Kelly",
+      bio: "Five-a-side on Tuesdays, terrible at cooking, great at ordering takeaway.",
+      reasons: ["No strings fun", "Video chat fun"],
+      ageVerified: false,
+      idVerified: true,
+      seedMatchId: 1, // Aoife
+    },
+  };
+
+  function seedDemoMatch(matchProfile, greeting){
+    if(!matchProfile || state.matches.find(m=>m.id===matchProfile.id)) return;
+    state.matches.unshift(matchProfile);
+    state.chats[matchProfile.id] = [{ from:"them", text: greeting }];
+  }
+
+  $("#loginBtn").addEventListener("click", ()=>{
+    const u = $("#loginUsername").value.trim().toLowerCase();
+    const p = $("#loginPassword").value;
+    const account = DEMO_ACCOUNTS[u];
+    if(!account || account.password !== p){
+      toast("Invalid demo login. Try female1/femtest or male1/maletest.");
+      return;
+    }
+    const photoUri = personSVG(AVATAR_PARAMS[u]);
+    state.ob.username = account.username;
+    state.ob.bio = account.bio;
+    state.ob.reasons = [...account.reasons];
+    state.ob.photos = [photoUri, photoUri, photoUri];
+    state.ob.photoUri = photoUri;
+    state.ob.loc = "fixed";
+    state.ob.social1 = "";
+    state.ob.social2 = "";
+    state.ageVerified = account.ageVerified;
+    state.idVerified = account.idVerified;
+    seedDemoMatch(PROFILES.find(p=>p.id===account.seedMatchId), `Hey ${account.username.split(" ")[0]}! Great to match with you 🎉`);
+    toast(`Logged in as ${account.username} (demo account).`);
+    showScreen("discover");
+  });
+
   /* ---------------- Discover / swipe deck ---------------- */
   function renderDeck(){
     const area = $("#deckArea");
@@ -274,10 +368,11 @@
     card.dataset.id = profile.id;
     const lockBadge = profile.has18
       ? `<div class="lock-badge">🔒 18+ ${profile.ext18Mode === "open" ? "unlocked" : "extension"}</div>` : "";
+    const photoStyle = profile.photoUri ? ` style="background-image:url('${profile.photoUri}')"` : "";
     card.innerHTML = `
       <div class="stamp stamp--like">LIKE</div>
       <div class="stamp stamp--pass">PASS</div>
-      <div class="card-photo">${profile.initial}${lockBadge}</div>
+      <div class="card-photo"${photoStyle}>${profile.photoUri ? "" : profile.initial}${lockBadge}</div>
       <div class="card-body">
         <div class="card-name-row"><h3>${profile.name}, ${profile.age}</h3><span class="distance">${profile.distance} km</span></div>
         <div class="card-tags">${profile.reasons.map(r=>`<span class="tag">${r}</span>`).join("")}</div>
@@ -381,8 +476,12 @@
     state.chats[profile.id] = [
       { from:"them", text:`Hey ${state.ob.username || "there"}! We matched 🎉` , system:false}
     ];
-    $("#matchAvatarMe").textContent = (state.ob.username||"Y")[0].toUpperCase();
-    $("#matchAvatarThem").textContent = profile.initial;
+    const meEl = $("#matchAvatarMe");
+    if(state.ob.photoUri){ meEl.style.backgroundImage = `url('${state.ob.photoUri}')`; meEl.textContent = ""; }
+    else { meEl.style.backgroundImage = ""; meEl.textContent = (state.ob.username||"Y")[0].toUpperCase(); }
+    const themEl = $("#matchAvatarThem");
+    if(profile.photoUri){ themEl.style.backgroundImage = `url('${profile.photoUri}')`; themEl.textContent = ""; }
+    else { themEl.style.backgroundImage = ""; themEl.textContent = profile.initial; }
     $("#matchText").textContent = `You and ${profile.name} both said yes.`;
     $("#matchOverlay").hidden = false;
     $("#matchOverlay")._profileId = profile.id;
@@ -405,7 +504,7 @@
       const last = chat[chat.length-1];
       const row = document.createElement("div");
       row.className = "match-row" + (chat.length<=1 ? " is-new" : "");
-      row.innerHTML = `<div class="avatar">${profile.initial}</div>
+      row.innerHTML = `${avatarHtml(profile)}
         <div><strong>${profile.name}</strong><p class="last-msg">${last ? (last.from==="me"?"You: ":"") + last.text : "Say hi!"}</p></div>
         <div class="match-meta">${profile.distance} km</div>`;
       row.addEventListener("click", ()=> openChat(profile.id));
@@ -678,7 +777,9 @@
   function renderProfile(){
     const name = state.ob.username || "You";
     $("#myName").textContent = name;
-    $("#myAvatar").textContent = name[0].toUpperCase();
+    const myAvatarEl = $("#myAvatar");
+    if(state.ob.photoUri){ myAvatarEl.style.backgroundImage = `url('${state.ob.photoUri}')`; myAvatarEl.textContent = ""; }
+    else { myAvatarEl.style.backgroundImage = ""; myAvatarEl.textContent = name[0].toUpperCase(); }
 
     const badges = $("#myBadges");
     badges.innerHTML = "";
@@ -874,7 +975,7 @@
     state.likesReceived.forEach(p=>{
       const row = document.createElement("div");
       row.className = "like-row";
-      row.innerHTML = `<div class="avatar">${p.initial}</div>
+      row.innerHTML = `${avatarHtml(p)}
         <div><strong>${p.name}, ${p.age}</strong><p class="last-msg">${p.distance} km away</p></div>
         <div class="like-meta"><button class="btn btn--primary btn--sm" data-like-back="${p.id}">Like back</button></div>`;
       likesList.appendChild(row);
@@ -882,7 +983,7 @@
 
     const matchesList = $("#activityMatchesList");
     matchesList.innerHTML = state.matches.length
-      ? state.matches.map(p=>`<div class="like-row"><div class="avatar">${p.initial}</div><div><strong>${p.name}</strong><p class="last-msg">Matched</p></div></div>`).join("")
+      ? state.matches.map(p=>`<div class="like-row">${avatarHtml(p)}<div><strong>${p.name}</strong><p class="last-msg">Matched</p></div></div>`).join("")
       : `<p class="muted-sm">No matches yet.</p>`;
 
     const callList = $("#callHistoryList");
