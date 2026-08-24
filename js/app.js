@@ -1,9 +1,18 @@
 /* ==========================================================================
-   Merj — prototype app logic (client-side only, no backend)
+   Merj — app logic. Most of this is still a client-side prototype, but real
+   accounts, real email verification, and real Discover data are now backed
+   by Supabase (see sql/001_schema.sql for the schema this code assumes).
    ========================================================================== */
 
 (function(){
   "use strict";
+
+  // Backend client. Falls back to null (rather than throwing) if the config/library didn't
+  // load, so the rest of the app -- demo accounts, guest mode, mock deck -- keeps working
+  // exactly as before even with no backend reachable.
+  const sb = (typeof window.supabase !== "undefined" && window.MERJ_SUPABASE_URL)
+    ? window.supabase.createClient(window.MERJ_SUPABASE_URL, window.MERJ_SUPABASE_KEY)
+    : null;
 
   /* ---------------- Illustrated avatars ----------------
      No real people's photos are used for mock/demo profiles: stock-photo licenses generally
@@ -128,6 +137,16 @@
     return `Active ${Math.round(mins/(60*24))}d ago`;
   }
 
+  // Real signups (once Supabase is wired up and someone completes real verification) get
+  // fetched into here and merged into Discover alongside the curated demo personas, so the
+  // deck keeps working exactly the same way whether a profile is a mock or a real account.
+  const REAL_PROFILES = [];
+  function buildDiscoverDeck(){
+    return [...PROFILES, ...REAL_PROFILES]
+      .filter(p => !isHiddenFromDiscovery(p))
+      .sort((a,b) => (isStale(a)?1:0) - (isStale(b)?1:0));
+  }
+
   /* ---------------- State ---------------- */
   const state = {
     screen: "landing",
@@ -136,10 +155,11 @@
     guestMode: false,
     guestSwipeCount: 0,
     guestGateTriggered: false,
+    realUserId: null,
     swipesUsed: 0,
     swipesLimit: 200,
     deckIndex: 0,
-    deck: PROFILES.filter(p => !isHiddenFromDiscovery(p)).sort((a,b) => (isStale(a)?1:0) - (isStale(b)?1:0)),
+    deck: buildDiscoverDeck(),
     matches: [],
     chats: {},
     activeChatId: null,
@@ -287,9 +307,10 @@
     obSteps().forEach(s => s.classList.toggle("is-active", Number(s.dataset.step) === state.ob.step));
     $("#obProgress").style.width = Math.round((state.ob.step/state.ob.totalSteps)*100) + "%";
     $("#obBack").style.visibility = state.ob.step === 1 ? "hidden" : "visible";
-    $("#obNext").textContent = state.ob.step === state.ob.totalSteps ? "Enter Merj" : "Continue";
+    $("#obNext").textContent = state.ob.step === state.ob.totalSteps ? "Verify & enter Merj" : "Continue";
     if(state.ob.step === 6){
-      $("#obPhoneConfirm").textContent = $("#obPhone").value || "your number";
+      $("#obEmailConfirm").textContent = $("#obEmail").value || "your address";
+      if(state.ob.otpSentForEmail !== $("#obEmail").value) sendRealOtp();
     }
     // Guests upgrading mid-swipe only need identity + verification (steps 1 & 6) to keep going —
     // photos/reasons/extras can be skipped and finished later from the profile screen.
@@ -341,12 +362,66 @@
       updateOnboardUI();
       saveOnboardingDraft();
     } else {
-      completeOnboarding();
+      verifyRealOtpAndFinish();
     }
   });
   $("#obBack").addEventListener("click", ()=>{
     if(state.ob.step > 1){ state.ob.step--; updateOnboardUI(); saveOnboardingDraft(); }
   });
+
+  /* ---------------- Real email verification (Supabase Auth) ----------------
+     Phone/SMS verification would need a paid SMS provider (Twilio etc.) configured on top of
+     Supabase Auth — a separate account/cost decision, deferred for now. Email OTP is free and
+     built in, so that's the real verification channel for Phase 1; the phone field is still
+     collected as profile data, just not the verification mechanism yet. */
+  function otpBoxes(){ return $$(".otp-box", $("#obOtpRow")); }
+  otpBoxes().forEach((box, i)=>{
+    box.addEventListener("input", ()=>{
+      box.value = box.value.replace(/\D/g, "").slice(0,1);
+      if(box.value && otpBoxes()[i+1]) otpBoxes()[i+1].focus();
+    });
+    box.addEventListener("keydown", (e)=>{
+      if(e.key === "Backspace" && !box.value && otpBoxes()[i-1]) otpBoxes()[i-1].focus();
+    });
+  });
+
+  function sendRealOtp(){
+    const email = $("#obEmail").value.trim();
+    if(!sb || !email) return;
+    state.ob.otpSentForEmail = email;
+    $("#obOtpHint").textContent = "Sending your code…";
+    sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } }).then(({ error })=>{
+      $("#obOtpHint").textContent = error
+        ? "Couldn't send a code — check the email address, then try Resend."
+        : "Enter the 6-digit code we emailed you.";
+      if(error) console.error("signInWithOtp error", error);
+    });
+  }
+  $("#obResendOtpBtn").addEventListener("click", ()=>{
+    state.ob.otpSentForEmail = null; // force a resend even for the same address
+    sendRealOtp();
+  });
+
+  function verifyRealOtpAndFinish(){
+    if(!sb){
+      toast("Backend isn't reachable right now — try again in a moment.");
+      return;
+    }
+    const email = $("#obEmail").value.trim();
+    const code = otpBoxes().map(b=>b.value).join("");
+    if(code.length < 6){ toast("Enter the full 6-digit code."); return; }
+    $("#obNext").disabled = true;
+    $("#obNext").textContent = "Verifying…";
+    sb.auth.verifyOtp({ email, token: code, type: "email" }).then(({ data, error })=>{
+      $("#obNext").disabled = false;
+      if(error){
+        $("#obNext").textContent = "Verify & enter Merj";
+        toast("That code didn't match — check it or tap Resend.");
+        return;
+      }
+      completeOnboarding(data.user.id);
+    });
+  }
 
   $$('.choice-card[data-loc]').forEach(card=>{
     card.addEventListener("click", ()=>{
@@ -488,7 +563,25 @@
     });
   }
 
-  function completeOnboarding(){
+  // Converts a data: URL (already resized/compressed by resizeImageFile) into a Blob for upload.
+  function dataUrlToBlob(dataUrl){
+    return fetch(dataUrl).then(r => r.blob());
+  }
+
+  function uploadPhotosToStorage(userId, dataUrls){
+    const uploads = dataUrls.filter(Boolean).map((dataUrl, i)=>
+      dataUrlToBlob(dataUrl).then(blob=>
+        sb.storage.from("profile-photos").upload(`${userId}/photo${i}-${Date.now()}.jpg`, blob, { contentType: "image/jpeg", upsert: true })
+          .then(({ data, error })=>{
+            if(error){ console.error("photo upload error", error); return null; }
+            return sb.storage.from("profile-photos").getPublicUrl(data.path).data.publicUrl;
+          })
+      )
+    );
+    return Promise.all(uploads).then(urls => urls.filter(Boolean));
+  }
+
+  function completeOnboarding(realUserId){
     state.ob.username = $("#obUsername").value.trim();
     state.ob.bio = $("#obBio").value.trim();
     state.ob.social1 = $("#obSocial1").value.trim();
@@ -497,17 +590,88 @@
     try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
     const wasGuestUpgrade = state.ob.guestUpgradeMode;
     state.ob.guestUpgradeMode = false;
-    if(wasGuestUpgrade){
-      state.guestMode = false;
-      toast(`Verified — welcome to Merj, ${state.ob.username}!`);
-      showScreen("discover");
-      if(state.ob.photos.filter(Boolean).length < 3){
-        setTimeout(()=> toast("Add 3 photos from your profile so others can see you in Discover."), 2500);
+
+    function finish(){
+      if(wasGuestUpgrade){
+        state.guestMode = false;
+        toast(`Verified — welcome to Merj, ${state.ob.username}!`);
+        showScreen("discover");
+        if(state.ob.photos.filter(Boolean).length < 3){
+          setTimeout(()=> toast("Add 3 photos from your profile so others can see you in Discover."), 2500);
+        }
+      } else {
+        toast(`Welcome to Merj, ${state.ob.username}!`);
+        showScreen("discover");
       }
-    } else {
-      toast(`Welcome to Merj, ${state.ob.username}!`);
-      showScreen("discover");
     }
+
+    if(!sb || !realUserId){ finish(); return; }
+
+    state.realUserId = realUserId;
+    const rawPhotos = state.ob.photos.filter(Boolean);
+    const photoUpload = rawPhotos.length ? uploadPhotosToStorage(realUserId, rawPhotos) : Promise.resolve([]);
+
+    photoUpload.then(photoUrls=>{
+      return sb.from("profiles").upsert({
+        id: realUserId,
+        username: state.ob.username,
+        age: ageFromDob($("#obDob").value),
+        dob: $("#obDob").value,
+        bio: state.ob.bio,
+        reasons: state.ob.reasons,
+        photos: photoUrls,
+        location_mode: state.ob.loc,
+        city: $("#obCity").value.trim() || null,
+        phone_verified: false,
+        email_verified: true,
+      });
+    }).then(({ error })=>{
+      if(error){
+        console.error("profile upsert error", error);
+        toast("Verified, but saving your profile to the backend failed — you can keep going locally for now.");
+      } else {
+        toast("Your profile is saved to the real backend.");
+        loadRealProfiles();
+      }
+      finish();
+    }).catch(err=>{
+      console.error(err);
+      toast("Verified, but the backend save failed — check the schema has been run.");
+      finish();
+    });
+  }
+
+  // Pulls real signed-up profiles into Discover alongside the curated demo personas. Falls back
+  // silently (deck just stays mock-only) if the schema hasn't been run yet or the fetch fails.
+  function loadRealProfiles(){
+    if(!sb) return;
+    sb.from("profiles").select("*").eq("is_banned", false).then(({ data, error })=>{
+      if(error || !data) return;
+      REAL_PROFILES.length = 0;
+      data.forEach(row=>{
+        if(row.id === state.realUserId) return; // never show yourself in your own deck
+        REAL_PROFILES.push({
+          id: "real-" + row.id,
+          name: row.username,
+          age: row.age || 25,
+          distance: Math.floor(1 + Math.random()*20),
+          initial: (row.username || "?")[0].toUpperCase(),
+          verified: !!row.phone_verified,
+          reasons: row.reasons || [],
+          bio: row.bio || "",
+          has18: row.ext18_mode && row.ext18_mode !== "off",
+          ext18Mode: row.ext18_mode,
+          interests: row.interests || [],
+          photos: (row.photos && row.photos.length) ? row.photos : undefined,
+          photoUri: (row.photos && row.photos.length) ? row.photos[0] : personSVG({ bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", style:"short", top:"#495057" }),
+          lastActiveMins: row.last_active_at ? Math.max(0, Math.round((Date.now() - new Date(row.last_active_at).getTime())/60000)) : 0,
+          declaredCountry: row.declared_country, ipCountry: row.declared_country, phoneCountry: row.declared_country,
+          aiPhotoSuspected: false, duplicateImageFlag: false, accountAgeDays: 1, likeRatio: 0.3,
+        });
+      });
+      state.deck = buildDiscoverDeck();
+      if(state.screen === "discover") renderDeck();
+    }).catch(()=>{ /* backend unreachable — Discover just stays mock-only */ });
   }
 
   /* ---------------- Demo stakeholder logins ----------------
@@ -1833,4 +1997,5 @@
   updateSwipeMeter();
   updateFilterSummary();
   restoreOnboardingDraftIfAny();
+  loadRealProfiles();
 })();
