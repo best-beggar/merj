@@ -167,7 +167,7 @@
   const state = {
     screen: "landing",
     prevScreen: "discover",
-    ob: { step:1, totalSteps:6, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false, gender:"woman", lookingFor:[] },
+    ob: { step:1, totalSteps:5, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false, gender:"woman", lookingFor:[] },
     guestMode: false,
     guestSwipeCount: 0,
     guestGateTriggered: false,
@@ -175,6 +175,7 @@
     isAdmin: false,
     swipesUsed: 0,
     swipesLimit: 200,
+    profileCompleteness: 100,
     deckIndex: 0,
     deck: buildDiscoverDeck(),
     matches: [],
@@ -331,15 +332,8 @@
     obSteps().forEach(s => s.classList.toggle("is-active", Number(s.dataset.step) === state.ob.step));
     $("#obProgress").style.width = Math.round((state.ob.step/state.ob.totalSteps)*100) + "%";
     $("#obBack").style.visibility = state.ob.step === 1 ? "hidden" : "visible";
-    if(state.ob.step === state.ob.totalSteps){
-      $("#obNext").textContent = state.ob.googleAuthed ? "Enter Merj" : "Verify & enter Merj";
-    } else {
-      $("#obNext").textContent = "Continue";
-    }
-    if(state.ob.step === 6){
-      $("#obEmailConfirm").textContent = $("#obEmail").value || "your address";
-      if(state.ob.otpSentForEmail !== $("#obEmail").value) sendRealOtp();
-    }
+    $("#obNext").textContent = state.ob.step === state.ob.totalSteps ? "Enter Merj" : "Continue";
+    $("#obPasswordField").hidden = !!state.ob.googleAuthed;
     // Guests upgrading mid-swipe, and Google sign-ins (already identity-verified), only need
     // step 1's essentials (DOB is a legal 18+ gate Google can't hand us, gender/who-you're-into
     // is required) -- photos/reasons/extras can be skipped and finished later from the profile.
@@ -347,13 +341,8 @@
     $("#obSkipRow").hidden = !(canSkip && state.ob.step > 1 && state.ob.step < state.ob.totalSteps);
   }
   $("#obSkipBtn").addEventListener("click", ()=>{
-    if(state.ob.googleAuthed){
-      completeOnboarding(state.realUserId);
-    } else {
-      state.ob.step = 6;
-      updateOnboardUI();
-      saveOnboardingDraft();
-    }
+    if(state.ob.googleAuthed) completeOnboarding(state.realUserId);
+    else signUpWithPassword();
   });
 
   function validateStep(step){
@@ -363,6 +352,7 @@
       // Google sign-ins are already identity-verified by Google -- phone becomes optional profile
       // data rather than the verification mechanism, so it's not required to continue.
       if(!state.ob.googleAuthed && !$("#obPhone").value.trim()) return "Phone number is required — it's how we verify you.";
+      if(!state.ob.googleAuthed && $("#obPassword").value.length < 6) return "Password must be at least 6 characters.";
       const dob = $("#obDob").value;
       if(!dob) return "Date of birth is required.";
       const age = ageFromDob(dob);
@@ -401,7 +391,7 @@
     } else if(state.ob.googleAuthed){
       completeOnboarding(state.realUserId);
     } else {
-      verifyRealOtpAndFinish();
+      signUpWithPassword();
     }
   });
 
@@ -418,43 +408,28 @@
     if(state.ob.step > 1){ state.ob.step--; updateOnboardUI(); saveOnboardingDraft(); }
   });
 
-  /* ---------------- Real email verification (Supabase Auth) ----------------
-     Phone/SMS verification would need a paid SMS provider (Twilio etc.) configured on top of
-     Supabase Auth — a separate account/cost decision, deferred for now. Email OTP is free and
-     built in, so that's the real verification channel for Phase 1; the phone field is still
-     collected as profile data, just not the verification mechanism yet. */
-  function sendRealOtp(){
+  /* ---------------- Real signup: traditional email + password (temporary) ----------------
+     Email OTP is unreliable right now (Resend's sandbox sender can only email its own account
+     owner until a verified domain is set up) -- switched to password auth as a stopgap so real
+     signups actually work today. Trade-off, stated plainly: this defers the "forgot password"
+     problem, since password reset also needs outbound email and hits the same limitation. This
+     needs "Confirm email" turned OFF in Supabase (Authentication -> Providers -> Email), or
+     signUp() below will succeed but return no session (email confirmation still pending). */
+  function signUpWithPassword(){
+    if(!sb){ toast("Backend isn't reachable right now — try again in a moment."); return; }
     const email = $("#obEmail").value.trim();
-    if(!sb || !email) return;
-    state.ob.otpSentForEmail = email;
-    $("#obOtpHint").textContent = "Sending your code…";
-    sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } }).then(({ error })=>{
-      $("#obOtpHint").textContent = error
-        ? "Couldn't send a code — check the email address, then try Resend."
-        : "Enter the code we emailed you (check spam if it doesn't show up in a minute).";
-      if(error) console.error("signInWithOtp error", error);
-    });
-  }
-  $("#obResendOtpBtn").addEventListener("click", ()=>{
-    state.ob.otpSentForEmail = null; // force a resend even for the same address
-    sendRealOtp();
-  });
-
-  function verifyRealOtpAndFinish(){
-    if(!sb){
-      toast("Backend isn't reachable right now — try again in a moment.");
-      return;
-    }
-    const email = $("#obEmail").value.trim();
-    const code = $("#obOtpInput").value.replace(/\D/g, "");
-    if(code.length < 4){ toast("Enter the code from your email."); return; }
+    const password = $("#obPassword").value;
     $("#obNext").disabled = true;
-    $("#obNext").textContent = "Verifying…";
-    sb.auth.verifyOtp({ email, token: code, type: "email" }).then(({ data, error })=>{
+    $("#obNext").textContent = "Creating account…";
+    sb.auth.signUp({ email, password }).then(({ data, error })=>{
       $("#obNext").disabled = false;
+      $("#obNext").textContent = "Enter Merj";
       if(error){
-        $("#obNext").textContent = "Verify & enter Merj";
-        toast("That code didn't match — check it or tap Resend.");
+        toast(error.message || "Couldn't create that account.");
+        return;
+      }
+      if(!data.session){
+        toast("Account created, but email confirmation is still required in Supabase settings — turn off \"Confirm email\" under Authentication → Providers → Email.");
         return;
       }
       completeOnboarding(data.user.id);
@@ -635,6 +610,26 @@
     return Promise.all(uploads).then(urls => urls.filter(Boolean));
   }
 
+  // Profile completeness drives the daily swipe allowance -- a real incentive to fill things in
+  // without ever blocking access outright. Weights sum to 100: photos matter most (40, split
+  // across up to 3), then bio/reasons/phone/socials at 15 each.
+  const MIN_SWIPES = 20, MAX_SWIPES = 200;
+  function computeProfileCompleteness(){
+    const photoCount = state.ob.photos.filter(Boolean).length;
+    let pct = Math.round(Math.min(photoCount, 3) / 3 * 40);
+    if(state.ob.bio && state.ob.bio.trim()) pct += 15;
+    if(state.ob.reasons && state.ob.reasons.length) pct += 15;
+    if($("#obPhone").value.trim()) pct += 15;
+    if((state.ob.social1 && state.ob.social1.trim()) || (state.ob.social2 && state.ob.social2.trim())) pct += 15;
+    return Math.min(pct, 100);
+  }
+  function applyCompletenessSwipeLimit(){
+    const pct = computeProfileCompleteness();
+    state.profileCompleteness = pct;
+    state.swipesLimit = Math.round(MIN_SWIPES + (MAX_SWIPES - MIN_SWIPES) * pct / 100);
+    updateSwipeMeter();
+  }
+
   function completeOnboarding(realUserId){
     state.ob.username = $("#obUsername").value.trim();
     state.ob.bio = $("#obBio").value.trim();
@@ -646,6 +641,7 @@
     state.ob.guestUpgradeMode = false;
 
     function finish(){
+      if(state.realUserId) applyCompletenessSwipeLimit();
       if(wasGuestUpgrade){
         state.guestMode = false;
         toast(`Verified — welcome to Merj, ${state.ob.username}!`);
@@ -771,19 +767,15 @@
       state.realUserId = session.user.id;
       sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
         if(error || !profile){
-          // Signed in (e.g. via Google) but no profile row yet -- finish the rest of signup.
-          // No email step needed since this identity is already verified by the OAuth provider.
+          // Signed in via Google but no profile row yet -- just the 3 essentials, then a choice.
           const meta = session.user.user_metadata || {};
           state.ob.googleAuthed = true;
-          state.ob.totalSteps = 5;
-          state.ob.step = 1;
+          state.ob.username = meta.full_name || meta.name || "Merj user";
           $("#obEmail").value = session.user.email || "";
           $("#obEmail").disabled = true;
-          $("#obUsername").value = meta.full_name || meta.name || "";
+          $("#obUsername").value = state.ob.username;
           $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
-          updateOnboardUI();
-          showScreen("onboarding");
-          toast("Signed in with Google — let's finish setting up your profile.");
+          showScreen("googleQuickStart");
           return;
         }
         hydrateStateFromProfile(profile);
@@ -791,43 +783,98 @@
     }).catch(()=>{});
   }
 
-  /* ---------------- Real login (returning accounts, passwordless) ----------------
-     Same email-OTP mechanism as signup verification -- Supabase recognizes an email that
-     already has an account and signs into it rather than creating a duplicate. */
-  function sendLoginOtp(){
-    const email = $("#loginEmail").value.trim();
-    if(!sb || !email){ toast("Enter your email first."); return; }
-    $("#loginSendCodeBtn").disabled = true;
-    sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } }).then(({ error })=>{
-      $("#loginSendCodeBtn").disabled = false;
-      if(error){
-        console.error("login signInWithOtp error", error);
-        toast("Couldn't send a code — if you don't have an account yet, create one instead.");
-        return;
-      }
-      $("#loginEmailStep1").hidden = true;
-      $("#loginEmailStep2").hidden = false;
-      $("#loginCodeSentText").textContent = `Code sent to ${email} — check your inbox (and spam folder).`;
-    });
-  }
-  $("#loginSendCodeBtn").addEventListener("click", sendLoginOtp);
-  $("#loginResendBtn").addEventListener("click", sendLoginOtp);
+  /* ---------------- Google quick start: 3 essentials, then a real choice ---------------- */
+  (function setGqDobBounds(){
+    const dobInput = $("#gqDob");
+    const today = new Date();
+    const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    dobInput.max = fmt(maxDate);
+    dobInput.min = "1930-01-01";
+  })();
 
-  $("#loginVerifyBtn").addEventListener("click", ()=>{
+  $("#gqLookingForChips").addEventListener("click", (e)=>{
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    chip.classList.toggle("is-selected");
+    const g = chip.dataset.gender;
+    if(chip.classList.contains("is-selected")) state.ob.lookingFor.push(g);
+    else state.ob.lookingFor = state.ob.lookingFor.filter(x=>x!==g);
+  });
+
+  (function buildGqPhotoSlot(){
+    const grid = $("#gqPhotoGrid");
+    const slot = document.createElement("label");
+    slot.className = "photo-slot";
+    slot.innerHTML = `<span>📷<br>Add photo</span><input type="file" accept="image/*" id="gqPhotoInput">`;
+    grid.appendChild(slot);
+  })();
+  $("#gqPhotoGrid").addEventListener("change", (e)=>{
+    const input = e.target.closest("input[type=file]");
+    if(!input || !input.files[0]) return;
+    const slot = input.closest(".photo-slot");
+    slot.innerHTML = `<span>Processing…</span>`;
+    resizeImageFile(input.files[0], 900, 0.82).then(dataUrl=>{
+      state.ob.photos[0] = dataUrl;
+      slot.className = "photo-slot has-photo";
+      slot.innerHTML = `<img src="${dataUrl}" alt="Your photo"><input type="file" accept="image/*" id="gqPhotoInput">`;
+    }).catch(()=>{
+      toast("Couldn't process that photo — try again.");
+      slot.className = "photo-slot";
+      slot.innerHTML = `<span>📷<br>Add photo</span><input type="file" accept="image/*" id="gqPhotoInput">`;
+    });
+  });
+
+  $("#gqContinueBtn").addEventListener("click", ()=>{
+    const dob = $("#gqDob").value;
+    if(!dob){ toast("Date of birth is required."); return; }
+    if(ageFromDob(dob) < 18){ toast("You must be 18 or older to use Merj."); return; }
+    if(state.ob.lookingFor.length === 0){ toast("Pick at least one gender you'd like to see."); return; }
+    if(!state.ob.photos[0]){ toast("Add one photo to continue."); return; }
+    $("#gqForm").hidden = true;
+    $("#gqChoice").hidden = false;
+  });
+
+  // Both choice buttons feed the same completeOnboarding() path, which reads from the onboarding
+  // screen's own DOM fields -- so the quick-start values get copied across regardless of which
+  // button is pressed, whether or not the user ever actually visits the full onboarding screen.
+  function syncGqFieldsToOnboarding(){
+    $("#obDob").value = $("#gqDob").value;
+    $("#obGender").value = $("#gqGender").value;
+    state.ob.gender = $("#gqGender").value;
+  }
+  $("#gqCompleteProfileBtn").addEventListener("click", ()=>{
+    syncGqFieldsToOnboarding();
+    state.ob.guestUpgradeMode = true; // reuses the existing "skip for now" machinery for steps 2-4
+    state.ob.step = 2;
+    updateOnboardUI();
+    showScreen("onboarding");
+  });
+  $("#gqStartBrowsingBtn").addEventListener("click", ()=>{
+    syncGqFieldsToOnboarding();
+    toast("You're in! Fewer daily swipes for now — finish your profile anytime for the full amount.");
+    completeOnboarding(state.realUserId);
+  });
+
+  /* ---------------- Real login (returning accounts, password) ----------------
+     Temporary stopgap alongside signup's password switch -- see the note on signUpWithPassword
+     for why (email deliverability), and the same forgot-password caveat applies here too. */
+  $("#loginRealSubmitBtn").addEventListener("click", ()=>{
     const email = $("#loginEmail").value.trim();
-    const code = $("#loginOtpInput").value.replace(/\D/g, "");
+    const password = $("#loginRealPassword").value;
     if(!sb){ toast("Backend isn't reachable right now."); return; }
-    if(code.length < 4){ toast("Enter the code from your email."); return; }
-    $("#loginVerifyBtn").disabled = true;
-    $("#loginVerifyBtn").textContent = "Verifying…";
-    sb.auth.verifyOtp({ email, token: code, type: "email" }).then(({ data, error })=>{
-      $("#loginVerifyBtn").disabled = false;
-      $("#loginVerifyBtn").textContent = "Verify & log in";
-      if(error){ toast("That code didn't match — check it or tap Resend."); return; }
+    if(!email || !password){ $("#loginRealError").textContent = "Enter both email and password."; return; }
+    $("#loginRealSubmitBtn").disabled = true;
+    $("#loginRealSubmitBtn").textContent = "Logging in…";
+    $("#loginRealError").textContent = "";
+    sb.auth.signInWithPassword({ email, password }).then(({ data, error })=>{
+      $("#loginRealSubmitBtn").disabled = false;
+      $("#loginRealSubmitBtn").textContent = "Log in";
+      if(error){ $("#loginRealError").textContent = "Wrong email or password."; return; }
       state.realUserId = data.user.id;
       sb.from("profiles").select("*").eq("id", data.user.id).single().then(({ data: profile, error: pErr })=>{
         if(pErr || !profile){
-          toast("Verified, but no profile found — let's finish setting one up.");
+          toast("Logged in, but no profile found — let's finish setting one up.");
           showScreen("onboarding");
           return;
         }
@@ -1612,6 +1659,13 @@
     badges.innerHTML += `<span class="badge badge--verified">✓ Phone verified</span>`;
     if(state.idVerified) badges.innerHTML += `<span class="badge badge--verified">✓ ID verified</span>`;
     if(state.ageVerified) badges.innerHTML += `<span class="badge badge--verified">✓ Age verified</span>`;
+
+    if(state.realUserId) applyCompletenessSwipeLimit();
+    const cp = state.profileCompleteness;
+    $("#profileCompletenessFill").style.width = cp + "%";
+    $("#profileCompletenessLabel").textContent = cp >= 100
+      ? `Profile 100% complete — full ${state.swipesLimit} daily swipes`
+      : `Profile ${cp}% complete — ${state.swipesLimit} daily swipes (finish it for the full ${MAX_SWIPES})`;
 
     $("#idVerifyStatus").textContent = state.idVerified ? "✓" : "·";
     $("#idVerifyStatus").classList.toggle("verify-status--done", state.idVerified);
