@@ -236,6 +236,17 @@
   });
 
   /* ---------------- Onboarding ---------------- */
+  // Constrain the date picker itself so nobody can even select an under-18 or nonsense date —
+  // far better UX than letting them pick it and then rejecting it.
+  (function setDobBounds(){
+    const dobInput = $("#obDob");
+    const today = new Date();
+    const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    dobInput.max = fmt(maxDate);
+    dobInput.min = "1930-01-01";
+  })();
+
   const obSteps = () => $$(".ob-step");
   function updateOnboardUI(){
     obSteps().forEach(s => s.classList.toggle("is-active", Number(s.dataset.step) === state.ob.step));
@@ -285,12 +296,13 @@
     if(state.ob.step < state.ob.totalSteps){
       state.ob.step++;
       updateOnboardUI();
+      saveOnboardingDraft();
     } else {
       completeOnboarding();
     }
   });
   $("#obBack").addEventListener("click", ()=>{
-    if(state.ob.step > 1){ state.ob.step--; updateOnboardUI(); }
+    if(state.ob.step > 1){ state.ob.step--; updateOnboardUI(); saveOnboardingDraft(); }
   });
 
   $$('.choice-card[data-loc]').forEach(card=>{
@@ -303,6 +315,7 @@
       if(isOnboard){
         state.ob.loc = loc;
         $("#fixedLocField").hidden = loc !== "fixed";
+        saveOnboardingDraft();
       }
     });
   });
@@ -314,40 +327,119 @@
     const r = chip.dataset.reason;
     if(chip.classList.contains("is-selected")) state.ob.reasons.push(r);
     else state.ob.reasons = state.ob.reasons.filter(x=>x!==r);
+    saveOnboardingDraft();
   });
 
+  /* ---------------- Onboarding draft persistence ----------------
+     Mobile browsers (Android Chrome especially, on lower-RAM phones) can kill a backgrounded
+     tab while the user is off in the native camera app taking a signup photo. Without this,
+     coming back to a reloaded tab meant losing the entire signup and landing back on the
+     marketing page. This snapshots progress after every step/photo/choice so a reload resumes
+     instead of restarting. */
+  const OB_DRAFT_KEY = "merj_onboarding_draft";
+  function saveOnboardingDraft(){
+    try{
+      sessionStorage.setItem(OB_DRAFT_KEY, JSON.stringify({
+        step: state.ob.step, loc: state.ob.loc, photos: state.ob.photos, reasons: state.ob.reasons,
+        username: $("#obUsername").value, email: $("#obEmail").value, phone: $("#obPhone").value,
+        dob: $("#obDob").value, city: $("#obCity").value, bio: $("#obBio").value,
+        social1: $("#obSocial1").value, social2: $("#obSocial2").value, contacts: $("#obContacts").checked,
+      }));
+    }catch(e){ /* storage full/unavailable — draft just won't survive a reload this time */ }
+  }
+  function restoreOnboardingDraftIfAny(){
+    let raw;
+    try{ raw = sessionStorage.getItem(OB_DRAFT_KEY); }catch(e){ return; }
+    if(!raw) return;
+    let d;
+    try{ d = JSON.parse(raw); }catch(e){ return; }
+    state.ob.loc = d.loc || "live";
+    state.ob.photos = d.photos || [null,null,null];
+    state.ob.reasons = d.reasons || [];
+    state.ob.step = d.step || 1;
+    $("#obUsername").value = d.username || "";
+    $("#obEmail").value = d.email || "";
+    $("#obPhone").value = d.phone || "";
+    $("#obDob").value = d.dob || "";
+    $("#obCity").value = d.city || "";
+    $("#obBio").value = d.bio || "";
+    $("#obSocial1").value = d.social1 || "";
+    $("#obSocial2").value = d.social2 || "";
+    $("#obContacts").checked = !!d.contacts;
+    $$('.choice-card[data-loc]').forEach(c => c.classList.toggle("is-selected", c.dataset.loc === state.ob.loc));
+    $("#fixedLocField").hidden = state.ob.loc !== "fixed";
+    $$('#reasonChips .chip').forEach(c => c.classList.toggle("is-selected", state.ob.reasons.includes(c.dataset.reason)));
+    buildPhotoGrid();
+    updateOnboardUI();
+    showScreen("onboarding");
+    toast("Welcome back — picked up where you left off.");
+  }
+
   // Photo upload slots (client-side preview only, simulated nudity scan)
+  // Downscale + JPEG-compress any photo before it ever touches app state. This keeps memory/
+  // storage use sane for real camera photos (which can be 5-10MB+ straight off a phone sensor)
+  // and is what makes it possible to persist an in-progress signup draft (see below) without
+  // blowing sessionStorage's quota.
+  function resizeImageFile(file, maxDim, quality){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if(width > height && width > maxDim){ height = Math.round(height * maxDim / width); width = maxDim; }
+          else if(height >= width && height > maxDim){ width = Math.round(width * maxDim / height); height = maxDim; }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality || 0.82));
+        };
+        img.onerror = () => reject(new Error("Couldn't read that image"));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error("Couldn't read that file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
   function buildPhotoGrid(){
     const grid = $("#photoGrid");
     grid.innerHTML = "";
     for(let i=0;i<3;i++){
       const slot = document.createElement("label");
-      slot.className = "photo-slot";
-      slot.innerHTML = `<span>📷<br>Photo ${i+1}</span><input type="file" accept="image/*" data-idx="${i}">`;
+      const existing = state.ob.photos[i];
+      slot.className = "photo-slot" + (existing ? " has-photo" : "");
+      slot.innerHTML = existing
+        ? `<img src="${existing}" alt="Photo ${i+1}"><input type="file" accept="image/*" data-idx="${i}">`
+        : `<span>📷<br>Photo ${i+1}</span><input type="file" accept="image/*" data-idx="${i}">`;
       grid.appendChild(slot);
     }
-    grid.addEventListener("change", onPhotoSelected);
+    const count = state.ob.photos.filter(Boolean).length;
+    $("#photoCount").textContent = `${count} of 3 minimum added`;
   }
 
   function onPhotoSelected(e){
     const input = e.target.closest('input[type=file]');
     if(!input || !input.files[0]) return;
     const idx = Number(input.dataset.idx);
-    const file = input.files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      state.ob.photos[idx] = reader.result;
-      const slot = input.closest(".photo-slot");
-      slot.classList.add("has-photo");
-      slot.innerHTML = `<img src="${reader.result}" alt="Photo ${idx+1}"><span class="scan-badge">Scanning…</span><input type="file" accept="image/*" data-idx="${idx}">`;
+    const slot = input.closest(".photo-slot");
+    slot.innerHTML = `<span>Processing…</span>`;
+    resizeImageFile(input.files[0], 900, 0.82).then(dataUrl=>{
+      state.ob.photos[idx] = dataUrl;
+      slot.className = "photo-slot has-photo";
+      slot.innerHTML = `<img src="${dataUrl}" alt="Photo ${idx+1}"><span class="scan-badge">Scanning…</span><input type="file" accept="image/*" data-idx="${idx}">`;
       setTimeout(()=>{
         const badge = slot.querySelector(".scan-badge");
         if(badge) badge.textContent = "✓ Passed nudity check";
       }, 700);
       const count = state.ob.photos.filter(Boolean).length;
       $("#photoCount").textContent = `${count} of 3 minimum added`;
-    };
-    reader.readAsDataURL(file);
+      saveOnboardingDraft();
+    }).catch(()=>{
+      toast("Couldn't process that photo — try again.");
+      slot.className = "photo-slot";
+      slot.innerHTML = `<span>📷<br>Photo ${idx+1}</span><input type="file" accept="image/*" data-idx="${idx}">`;
+    });
   }
 
   function completeOnboarding(){
@@ -356,6 +448,7 @@
     state.ob.social1 = $("#obSocial1").value.trim();
     state.ob.social2 = $("#obSocial2").value.trim();
     state.ob.contacts = $("#obContacts").checked;
+    try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
     toast(`Welcome to Merj, ${state.ob.username}!`);
     showScreen("discover");
   }
@@ -1525,6 +1618,8 @@
 
   /* ---------------- Init ---------------- */
   buildPhotoGrid();
+  $("#photoGrid").addEventListener("change", onPhotoSelected);
   updateOnboardUI();
   updateSwipeMeter();
+  restoreOnboardingDraftIfAny();
 })();
