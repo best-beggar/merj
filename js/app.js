@@ -141,8 +141,14 @@
   // fetched into here and merged into Discover alongside the curated demo personas, so the
   // deck keeps working exactly the same way whether a profile is a mock or a real account.
   const REAL_PROFILES = [];
+  // These 5 mock ids are also seeded into the real database (sql/001_schema.sql) under the same
+  // names, so once real data has loaded, the DB row is the one shown and the local mock is
+  // dropped -- otherwise "Aoife"/"Jordan"/etc. would appear twice. Sam/Priya/Cian are pure
+  // local-only trust-engine demo profiles (the seeded red-flag examples) and always stay.
+  const SEEDED_MOCK_IDS = new Set([1, 4, 5, 7, 8]);
   function buildDiscoverDeck(){
-    return [...PROFILES, ...REAL_PROFILES]
+    const localPool = REAL_PROFILES.length ? PROFILES.filter(p => !SEEDED_MOCK_IDS.has(p.id)) : PROFILES;
+    return [...localPool, ...REAL_PROFILES]
       .filter(p => !isHiddenFromDiscovery(p))
       .sort((a,b) => (isStale(a)?1:0) - (isStale(b)?1:0));
   }
