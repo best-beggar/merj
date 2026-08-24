@@ -62,6 +62,7 @@ img{ max-width: 100%; display:block; }
 .btn:active{ transform: scale(0.97); }
 .btn--primary{ background: var(--gradient); color:#fff; box-shadow: 0 6px 18px rgba(255,59,110,0.35); }
 .btn--outline{ background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+.google-btn{ gap:10px; background: var(--surface); }
 .btn--ghost{ background: var(--surface); color: var(--text); }
 .btn--danger{ background: var(--danger); color:#fff; }
 .btn--danger-ghost{ background: transparent; border: 1.5px solid var(--danger); color: var(--danger); }

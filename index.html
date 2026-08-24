@@ -6,7 +6,7 @@
 <title>Merj — Swipe. Match. Mean it.</title>
 <meta name="description" content="Merj is a free dating platform built around honest matching, real safety controls, and zero paywalls.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff3b6e'/%3E%3Cstop offset='0.55' stop-color='%23ff7a3d'/%3E%3Cstop offset='1' stop-color='%239b5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M16 25.8l-1.9-1.76C7.2 18.2 3 14.4 3 9.9 3 6.2 5.9 3.3 9.6 3.3c2.1 0 4.1 1 5.4 2.5 1.3-1.5 3.3-2.5 5.4-2.5 3.7 0 6.6 2.9 6.6 6.6 0 4.5-4.2 8.3-11.1 14.1L16 25.8z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=10">
+<link rel="stylesheet" href="css/styles.css?v=11">
 </head>
 <body>
 
@@ -81,6 +81,12 @@
       <button class="icon-btn" data-nav="landing" aria-label="Back" style="margin-bottom:16px;">←</button>
       <h2>Log in</h2>
 
+      <button class="btn btn--outline btn--block google-btn" id="googleLoginBtn">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/><path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+      <p class="muted-sm" style="text-align:center; margin:14px 0;">or</p>
+
       <div class="panel-section" id="loginEmailStep1">
         <h4>Your account</h4>
         <p class="muted-sm">Merj doesn't use passwords — we'll email you a one-time code instead.</p>
@@ -126,6 +132,11 @@
       <div class="ob-step is-active" data-step="1">
         <h2>Create your account</h2>
         <p class="muted">Takes about two minutes. You must be 18 or older to use Merj.</p>
+        <button class="btn btn--outline btn--block google-btn" id="googleSignupBtn" type="button">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/><path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z"/></svg>
+          Continue with Google
+        </button>
+        <p class="muted-sm" style="text-align:center; margin:14px 0;">or fill this in</p>
         <label class="field">Username
           <input type="text" id="obUsername" placeholder="e.g. nmeera" autocomplete="username">
         </label>
@@ -916,6 +927,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=16"></script>
+<script src="js/app.js?v=17"></script>
 </body>
 </html>

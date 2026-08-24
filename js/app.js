@@ -386,10 +386,22 @@
       state.ob.step++;
       updateOnboardUI();
       saveOnboardingDraft();
+    } else if(state.ob.googleAuthed){
+      completeOnboarding(state.realUserId);
     } else {
       verifyRealOtpAndFinish();
     }
   });
+
+  /* ---------------- Google sign-in ----------------
+     No email ever sent by us for this path -- Google handles verification entirely, which is
+     what makes it immune to the email-provider deliverability limits affecting OTP right now. */
+  function startGoogleSignIn(){
+    if(!sb){ toast("Backend isn't reachable right now."); return; }
+    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+  }
+  $("#googleLoginBtn").addEventListener("click", startGoogleSignIn);
+  $("#googleSignupBtn").addEventListener("click", startGoogleSignIn);
   $("#obBack").addEventListener("click", ()=>{
     if(state.ob.step > 1){ state.ob.step--; updateOnboardUI(); saveOnboardingDraft(); }
   });
@@ -746,7 +758,21 @@
       if(!session) return;
       state.realUserId = session.user.id;
       sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
-        if(error || !profile) return;
+        if(error || !profile){
+          // Signed in (e.g. via Google) but no profile row yet -- finish the rest of signup.
+          // No email step needed since this identity is already verified by the OAuth provider.
+          const meta = session.user.user_metadata || {};
+          state.ob.googleAuthed = true;
+          state.ob.totalSteps = 5;
+          state.ob.step = 1;
+          $("#obEmail").value = session.user.email || "";
+          $("#obEmail").disabled = true;
+          $("#obUsername").value = meta.full_name || meta.name || "";
+          updateOnboardUI();
+          showScreen("onboarding");
+          toast("Signed in with Google — let's finish setting up your profile.");
+          return;
+        }
         hydrateStateFromProfile(profile);
       }).catch(()=>{});
     }).catch(()=>{});
