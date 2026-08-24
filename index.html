@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Merj — Swipe. Match. Mean it.</title>
+<meta name="description" content="Merj is a free dating platform built around honest matching, real safety controls, and zero paywalls.">
+<link rel="stylesheet" href="css/styles.css?v=2">
+</head>
+<body>
+
+<!-- ============ LANDING (marketing) ============ -->
+<section class="screen screen--landing is-active" data-screen="landing">
+  <header class="landing-nav">
+    <div class="brand"><span class="brand-mark">M</span>Merj</div>
+    <button class="btn btn--ghost btn--sm" data-nav="onboarding">Log in</button>
+  </header>
+
+  <div class="hero">
+    <span class="pill pill--accent">100% free. Always.</span>
+    <h1>Dating, without the toll booth.</h1>
+    <p class="hero-sub">Swipe left, swipe right, match instantly, and actually talk — voice or video — the moment you both say yes. No paywalled messaging, ever.</p>
+    <div class="hero-cta">
+      <button class="btn btn--primary btn--lg" data-nav="onboarding">Get started free</button>
+      <button class="btn btn--outline btn--lg" data-action="demo">See it in action</button>
+    </div>
+    <div class="trust-strip">
+      <div class="trust-item"><strong>18+</strong><span>Age-gated platform</span></div>
+      <div class="trust-item"><strong>Phone verified</strong><span>Required to browse</span></div>
+      <div class="trust-item"><strong>Human + AI</strong><span>moderated safety</span></div>
+    </div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>200 free swipes a day</h3>
+      <p>Run out? Watch a short ad for 10 more. No subscriptions, no "premium swipes."</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <h3>Sorted your way</h3>
+      <p>Default order is proximity → age → interests. Rebuild it however you like from full filters.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <h3>Say what you're here for</h3>
+      <p>No strings, same-day, friends, long-term, dinner dates, video chat — tag your intent so matches actually line up.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📞</div>
+      <h3>Talk instantly</h3>
+      <p>Matched users can start an in-app voice or video call with one tap. No phone numbers exchanged unless you choose to.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔞</div>
+      <h3>Optional 18+ profile extensions</h3>
+      <p>Gated behind age verification. Set yours to open or request-only, per person.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <h3>Built to fight fakes</h3>
+      <p>Phone verification, duplicate-image detection, and behaviour flags catch bots and scam accounts before they reach you.</p>
+    </div>
+  </div>
+
+  <footer class="landing-footer">
+    <p>Merj is a design prototype. No data leaves your browser. · <button class="link-btn" data-action="demo">Launch demo</button> · <a href="privacy.html" class="link-btn" style="text-decoration:none;">Privacy &amp; GDPR</a></p>
+  </footer>
+</section>
+
+<!-- ============ APP SHELL (phone-frame wrapper for tablet/desktop) ============ -->
+<div class="app-frame" id="appFrame">
+
+  <!-- ---------- ONBOARDING ---------- -->
+  <section class="screen" data-screen="onboarding">
+    <div class="onboard-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="obProgress"></div></div>
+
+      <!-- Step 1: identity -->
+      <div class="ob-step is-active" data-step="1">
+        <h2>Create your account</h2>
+        <p class="muted">Takes about two minutes. You must be 18 or older to use Merj.</p>
+        <label class="field">Username
+          <input type="text" id="obUsername" placeholder="e.g. nmeera" autocomplete="username">
+        </label>
+        <label class="field">Email address
+          <input type="email" id="obEmail" placeholder="you@example.com" autocomplete="email">
+        </label>
+        <label class="field">Phone number
+          <input type="tel" id="obPhone" placeholder="+353 000 000 000" autocomplete="tel">
+          <span class="field-hint">Required before you can browse — SMS verification, one-time only.</span>
+        </label>
+        <label class="field">Date of birth
+          <input type="date" id="obDob">
+          <span class="field-hint" id="dobHint">You must be 18+. We check this — no exceptions.</span>
+        </label>
+      </div>
+
+      <!-- Step 2: location -->
+      <div class="ob-step" data-step="2">
+        <h2>Where should we look?</h2>
+        <p class="muted">Matches are ranked by proximity first, by default.</p>
+        <div class="choice-row">
+          <button class="choice-card is-selected" data-loc="live">
+            <strong>Live location</strong>
+            <span>Updates as you move. Best matches nearby, right now.</span>
+          </button>
+          <button class="choice-card" data-loc="fixed">
+            <strong>Fixed location</strong>
+            <span>Pick a city. Doesn't change until you update it.</span>
+          </button>
+        </div>
+        <label class="field" id="fixedLocField" hidden>City
+          <input type="text" id="obCity" placeholder="e.g. Dublin, IE">
+        </label>
+      </div>
+
+      <!-- Step 3: photos -->
+      <div class="ob-step" data-step="3">
+        <h2>Add at least 3 photos</h2>
+        <p class="muted">Every photo is auto-screened for nudity before it's visible to anyone. Flagged photos get a fast human review — you'll be notified either way.</p>
+        <div class="photo-grid" id="photoGrid">
+          <!-- populated by JS -->
+        </div>
+        <span class="field-hint" id="photoCount">0 of 3 minimum added</span>
+      </div>
+
+      <!-- Step 4: reasons -->
+      <div class="ob-step" data-step="4">
+        <h2>What are you here for?</h2>
+        <p class="muted">Pick as many as apply. This shows on your profile and improves your matches.</p>
+        <div class="chip-group" id="reasonChips">
+          <button class="chip" data-reason="No strings fun">No strings fun</button>
+          <button class="chip" data-reason="Same day sex">Same day sex</button>
+          <button class="chip" data-reason="Just friends">Just friends</button>
+          <button class="chip" data-reason="Long term">Long term</button>
+          <button class="chip" data-reason="Dinner dates">Dinner dates</button>
+          <button class="chip" data-reason="Video chat fun">Video chat fun</button>
+        </div>
+      </div>
+
+      <!-- Step 5: extras -->
+      <div class="ob-step" data-step="5">
+        <h2>Optional extras</h2>
+        <p class="muted">Link other platforms you're active on, and a short description. Skip anything you like.</p>
+        <label class="field">About you
+          <textarea id="obBio" rows="3" placeholder="A line or two about you..."></textarea>
+        </label>
+        <label class="field">Instagram / social handle
+          <input type="text" id="obSocial1" placeholder="@handle">
+        </label>
+        <label class="field">Another platform you use
+          <input type="text" id="obSocial2" placeholder="Snapchat, Discord, etc.">
+        </label>
+        <label class="toggle-row">
+          <span>Let Merj match me with people already in my phone contacts <em>(opt-in, uses secure hashing — we never see your raw contact list)</em></span>
+          <input type="checkbox" id="obContacts">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <!-- Step 6: verify -->
+      <div class="ob-step" data-step="6">
+        <h2>Verify your phone</h2>
+        <p class="muted">We texted a 6-digit code to <span id="obPhoneConfirm">your number</span>. This unlocks browsing — no photo ID needed to get started.</p>
+        <div class="otp-row">
+          <input maxlength="1" class="otp-box" inputmode="numeric">
+          <input maxlength="1" class="otp-box" inputmode="numeric">
+          <input maxlength="1" class="otp-box" inputmode="numeric">
+          <input maxlength="1" class="otp-box" inputmode="numeric">
+        </div>
+        <span class="field-hint">Prototype: any 4 digits work.</span>
+      </div>
+
+      <div class="ob-nav">
+        <button class="btn btn--ghost" id="obBack">Back</button>
+        <button class="btn btn--primary" id="obNext">Continue</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- DISCOVER (swipe deck) ---------- -->
+  <section class="screen" data-screen="discover">
+    <header class="app-header">
+      <div class="app-header-title">
+        <span class="brand-mark brand-mark--sm">M</span>
+        <span id="locLabel">Near you</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" data-nav="filters" aria-label="Filters">⚙️</button>
+      </div>
+    </header>
+
+    <div class="swipe-meter">
+      <div class="swipe-meter-bar"><div class="swipe-meter-fill" id="swipeFill"></div></div>
+      <span id="swipeCount">200 / 200 swipes left today</span>
+    </div>
+
+    <div class="deck-area" id="deckArea">
+      <div class="deck-empty" id="deckEmpty" hidden>
+        <div class="deck-empty-icon">🌍</div>
+        <h3>You've seen everyone nearby</h3>
+        <p class="muted">Try widening your distance filter, or check back later.</p>
+        <button class="btn btn--primary" data-nav="filters">Adjust filters</button>
+      </div>
+      <div class="deck-outofswipes" id="deckOut" hidden>
+        <div class="deck-empty-icon">🎬</div>
+        <h3>Out of swipes for today</h3>
+        <p class="muted">Watch a short ad to unlock 10 more swipes.</p>
+        <button class="btn btn--primary" id="watchAdBtn">Watch ad for +10 swipes</button>
+      </div>
+      <!-- cards injected by JS -->
+    </div>
+
+    <div class="swipe-controls">
+      <button class="round-btn round-btn--pass" id="passBtn" aria-label="Pass">✕</button>
+      <button class="round-btn round-btn--info" id="infoBtn" aria-label="View profile">ℹ️</button>
+      <button class="round-btn round-btn--like" id="likeBtn" aria-label="Like">♥</button>
+    </div>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn is-active" data-nav="discover"><span>🔥</span>Discover</button>
+      <button class="nav-btn" data-nav="matches"><span>💬</span>Matches<span class="nav-badge" id="matchBadge" hidden></span></button>
+      <button class="nav-btn" data-nav="activity"><span>📜</span>Activity</button>
+      <button class="nav-btn" data-nav="profile"><span>👤</span>Profile</button>
+      <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
+    </nav>
+  </section>
+
+  <!-- ---------- FILTERS ---------- -->
+  <section class="screen" data-screen="filters">
+    <header class="app-header">
+      <button class="icon-btn" data-nav="discover" aria-label="Back">←</button>
+      <div class="app-header-title">Filters</div>
+      <button class="link-btn" id="resetFilters">Reset</button>
+    </header>
+    <div class="scroll-panel">
+      <div class="panel-section">
+        <h4>Sort matches by</h4>
+        <p class="muted-sm">Drag to reorder your priority.</p>
+        <ul class="sort-list" id="sortList">
+          <li draggable="true" data-sort="proximity">☰ Proximity</li>
+          <li draggable="true" data-sort="age">☰ Age</li>
+          <li draggable="true" data-sort="interests">☰ Shared interests</li>
+        </ul>
+      </div>
+      <div class="panel-section">
+        <h4>Distance</h4>
+        <input type="range" min="1" max="200" value="50" id="rangeDistance">
+        <div class="range-value"><span id="distanceVal">50</span> km</div>
+      </div>
+      <div class="panel-section">
+        <h4>Age range</h4>
+        <div class="dual-range-labels"><span id="ageMinVal">18</span> – <span id="ageMaxVal">45</span></div>
+        <input type="range" min="18" max="80" value="18" id="rangeAgeMin">
+        <input type="range" min="18" max="80" value="45" id="rangeAgeMax">
+      </div>
+      <div class="panel-section">
+        <h4>Looking for</h4>
+        <div class="chip-group" id="filterReasonChips">
+          <button class="chip" data-reason="No strings fun">No strings fun</button>
+          <button class="chip" data-reason="Same day sex">Same day sex</button>
+          <button class="chip" data-reason="Just friends">Just friends</button>
+          <button class="chip" data-reason="Long term">Long term</button>
+          <button class="chip" data-reason="Dinner dates">Dinner dates</button>
+          <button class="chip" data-reason="Video chat fun">Video chat fun</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <label class="toggle-row">
+          <span>Show 18+ extended profiles in my deck</span>
+          <input type="checkbox" id="show18Toggle">
+          <span class="toggle-switch"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Only show phone-verified profiles</span>
+          <input type="checkbox" id="verifiedOnlyToggle" checked>
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <button class="btn btn--primary btn--block" data-nav="discover">Apply filters</button>
+    </div>
+  </section>
+
+  <!-- ---------- MATCHES / CHAT LIST ---------- -->
+  <section class="screen" data-screen="matches">
+    <header class="app-header">
+      <div class="app-header-title">Matches</div>
+    </header>
+    <div class="scroll-panel" id="matchesList">
+      <div class="empty-state" id="matchesEmpty">
+        <div class="deck-empty-icon">💫</div>
+        <h3>No matches yet</h3>
+        <p class="muted">Keep swiping — mutual likes show up here instantly.</p>
+      </div>
+      <!-- match rows injected by JS -->
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn" data-nav="discover"><span>🔥</span>Discover</button>
+      <button class="nav-btn is-active" data-nav="matches"><span>💬</span>Matches</button>
+      <button class="nav-btn" data-nav="activity"><span>📜</span>Activity</button>
+      <button class="nav-btn" data-nav="profile"><span>👤</span>Profile</button>
+      <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
+    </nav>
+  </section>
+
+  <!-- ---------- CHAT THREAD ---------- -->
+  <section class="screen" data-screen="chat">
+    <header class="app-header">
+      <button class="icon-btn" data-nav="matches" aria-label="Back">←</button>
+      <div class="app-header-title" id="chatWithName">Chat</div>
+      <div class="header-actions">
+        <button class="icon-btn" id="audioCallBtn" aria-label="Audio call">📞</button>
+        <button class="icon-btn" id="videoCallBtn" aria-label="Video call">🎥</button>
+      </div>
+    </header>
+    <div class="chat-thread" id="chatThread"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Type a message...">
+      <button class="btn btn--primary btn--sm" id="chatSend">Send</button>
+    </div>
+  </section>
+
+  <!-- ---------- PROFILE ---------- -->
+  <section class="screen" data-screen="profile">
+    <header class="app-header">
+      <div class="app-header-title">Your profile</div>
+      <button class="icon-btn" data-nav="settings" aria-label="Settings">⚙️</button>
+    </header>
+    <div class="scroll-panel">
+      <div class="profile-hero">
+        <div class="avatar avatar--xl" id="myAvatar">?</div>
+        <h2 id="myName">You</h2>
+        <div class="badge-row" id="myBadges"></div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Verification</h4>
+        <div class="verify-row">
+          <div class="verify-item">
+            <span class="verify-status verify-status--done">✓</span>
+            <div><strong>Phone verified</strong><p class="muted-sm">Required to browse. Done during sign up.</p></div>
+          </div>
+          <div class="verify-item">
+            <span class="verify-status" id="idVerifyStatus">·</span>
+            <div><strong>ID verification</strong><p class="muted-sm">Optional. Builds trust, shows a badge on your profile.</p></div>
+            <button class="btn btn--ghost btn--sm" id="idVerifyBtn">Verify</button>
+          </div>
+          <div class="verify-item">
+            <span class="verify-status" id="ageVerifyStatus">·</span>
+            <div><strong>Age verification (face scan)</strong><p class="muted-sm">Needed only to add or view 18+ profile content. Least-intrusive check available on your device.</p></div>
+            <button class="btn btn--ghost btn--sm" id="ageVerifyBtn">Verify</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Photos</h4>
+        <div class="photo-grid" id="profilePhotoGrid"></div>
+      </div>
+
+      <div class="panel-section">
+        <h4>18+ profile extension</h4>
+        <p class="muted-sm">Requires age verification. Choose who can see it.</p>
+        <div class="choice-row" id="ext18Choices">
+          <button class="choice-card" data-vis="off"><strong>Off</strong><span>No 18+ content shown</span></button>
+          <button class="choice-card" data-vis="request"><strong>Request only</strong><span>Others must ask, you approve each time</span></button>
+          <button class="choice-card" data-vis="open"><strong>Open</strong><span>Visible to age-verified matches</span></button>
+        </div>
+        <div class="locked-panel" id="ext18Locked">
+          <div class="lock-icon">🔒</div>
+          <p>Verify your age to enable this section.</p>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Reasons for being here</h4>
+        <div class="chip-group" id="profileReasonChips"></div>
+      </div>
+
+      <div class="panel-section">
+        <h4>About</h4>
+        <p id="profileBioText" class="muted">—</p>
+      </div>
+
+      <div class="panel-section">
+        <h4>Linked platforms</h4>
+        <div class="social-list" id="profileSocials"></div>
+      </div>
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn" data-nav="discover"><span>🔥</span>Discover</button>
+      <button class="nav-btn" data-nav="matches"><span>💬</span>Matches</button>
+      <button class="nav-btn" data-nav="activity"><span>📜</span>Activity</button>
+      <button class="nav-btn is-active" data-nav="profile"><span>👤</span>Profile</button>
+      <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
+    </nav>
+  </section>
+
+  <!-- ---------- SETTINGS ---------- -->
+  <section class="screen" data-screen="settings">
+    <header class="app-header">
+      <button class="icon-btn" data-nav="profile" aria-label="Back">←</button>
+      <div class="app-header-title">Settings</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="panel-section">
+        <h4>Username</h4>
+        <label class="field">Username
+          <input type="text" id="settingsUsername">
+          <span class="field-hint" id="usernameHint"></span>
+        </label>
+        <button class="btn btn--ghost btn--sm" id="usernameSaveBtn">Save username</button>
+      </div>
+
+      <div class="panel-section">
+        <h4>Location mode</h4>
+        <div class="choice-row">
+          <button class="choice-card is-selected" data-loc="live"><strong>Live location</strong><span>Updates automatically</span></button>
+          <button class="choice-card" data-loc="fixed"><strong>Fixed location</strong><span>Set a city manually</span></button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Profile visibility</h4>
+        <div class="choice-row">
+          <button class="choice-card is-selected" data-vismode="public"><strong>Public</strong><span>Visible in Discover to everyone matching your filters</span></button>
+          <button class="choice-card" data-vismode="private"><strong>Private</strong><span>Hidden from Discover. Existing matches/chats still work.</span></button>
+        </div>
+        <label class="toggle-row">
+          <span>Pause my account <em>(no new profiles shown to you or of you — one tap to come back)</em></span>
+          <input type="checkbox" id="pauseToggle">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <div class="panel-section">
+        <h4>Notifications</h4>
+        <p class="muted-sm">Choose how you hear about each event. Delivery still needs a real backend (SMS/email provider) behind this — these switches wire up the preference, not the send.</p>
+        <div class="notif-grid" id="notifGrid"></div>
+      </div>
+
+      <div class="panel-section">
+        <label class="toggle-row">
+          <span>Contact discovery <em>(match with people from your contacts, hashed &amp; opt-in)</em></span>
+          <input type="checkbox" id="settingsContacts">
+          <span class="toggle-switch"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Show my distance instead of exact location</span>
+          <input type="checkbox" checked>
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <div class="panel-section">
+        <a href="privacy.html" class="btn btn--ghost btn--block" style="text-decoration:none;">Privacy &amp; GDPR</a>
+        <button class="btn btn--outline btn--block" data-nav="landing">Log out</button>
+        <button class="btn btn--danger-ghost btn--block" id="deleteAccountBtn">Delete account</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- SAFETY / TRUST ---------- -->
+  <section class="screen" data-screen="safety">
+    <header class="app-header">
+      <div class="app-header-title">Safety &amp; Trust</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="panel-section">
+        <h4>How we keep Merj clean</h4>
+        <ul class="safety-list">
+          <li><strong>Phone verification</strong> is required before anyone can browse — no anonymous burner accounts.</li>
+          <li><strong>Every photo</strong> is automatically screened for nudity and policy violations before it's shown to anyone; flags go to human review.</li>
+          <li><strong>18+ content</strong> is double-gated: platform-level age verification, plus per-viewer, per-profile permission.</li>
+          <li><strong>Fake &amp; scam accounts</strong> are flagged using duplicate-photo detection, behaviour patterns (mass-liking, copy-paste bios, off-platform redirects), and report volume — flagged accounts are limited automatically and reviewed by a person.</li>
+          <li><strong>Report &amp; block</strong> is available from any profile, match, or chat.</li>
+        </ul>
+      </div>
+      <div class="panel-section">
+        <h4>Report a profile</h4>
+        <label class="field">Who are you reporting?
+          <select class="field-select" id="reportTarget"></select>
+        </label>
+        <select class="field-select" id="reportReason">
+          <option>Fake profile / bot</option>
+          <option>Underage user</option>
+          <option>Inappropriate photo</option>
+          <option>Soliciting payment or off-platform contact</option>
+          <option>Harassment</option>
+        </select>
+        <button class="btn btn--danger btn--block" id="reportBtn">Submit report</button>
+        <p class="muted-sm">Reports are weighted by reporter history to stop pile-ons — repeatedly reporting people without cause quietly reduces how much your future reports count. <span id="myReportCount"></span></p>
+      </div>
+
+      <div class="panel-section">
+        <h4>Trust &amp; Safety engine — live demo</h4>
+        <p class="muted-sm">This is the actual scoring function running against the mock profiles in your deck, so you can see how the signals combine instead of just trusting a paragraph about it. Nothing here is a hard auto-ban — everything routes to a graduated response.</p>
+        <div id="trustDemoList"></div>
+      </div>
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn" data-nav="discover"><span>🔥</span>Discover</button>
+      <button class="nav-btn" data-nav="matches"><span>💬</span>Matches</button>
+      <button class="nav-btn" data-nav="activity"><span>📜</span>Activity</button>
+      <button class="nav-btn" data-nav="profile"><span>👤</span>Profile</button>
+      <button class="nav-btn is-active" data-nav="safety"><span>🛡️</span>Safety</button>
+    </nav>
+  </section>
+
+  <!-- ---------- ACTIVITY HISTORY ---------- -->
+  <section class="screen" data-screen="activity">
+    <header class="app-header">
+      <div class="app-header-title">Your activity</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="activity-tabs" id="activityTabs">
+        <button class="activity-tab is-active" data-atab="likes">Who liked you</button>
+        <button class="activity-tab" data-atab="matches">Matches</button>
+        <button class="activity-tab" data-atab="calls">Calls</button>
+      </div>
+
+      <div class="activity-pane is-active" data-apane="likes">
+        <p class="muted-sm">Free on Merj — no "see who likes you" paywall. That's the whole point.</p>
+        <div id="likesList"></div>
+      </div>
+      <div class="activity-pane" data-apane="matches">
+        <div id="activityMatchesList"></div>
+      </div>
+      <div class="activity-pane" data-apane="calls">
+        <div id="callHistoryList"></div>
+      </div>
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn" data-nav="discover"><span>🔥</span>Discover</button>
+      <button class="nav-btn" data-nav="matches"><span>💬</span>Matches</button>
+      <button class="nav-btn is-active" data-nav="activity"><span>📜</span>Activity</button>
+      <button class="nav-btn" data-nav="profile"><span>👤</span>Profile</button>
+      <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
+    </nav>
+  </section>
+
+</div><!-- /app-frame -->
+
+<!-- ============ OVERLAYS ============ -->
+<div class="overlay" id="matchOverlay" hidden>
+  <div class="match-card">
+    <div class="match-confetti">🎉</div>
+    <h2>It's a match!</h2>
+    <p id="matchText">You and someone both said yes.</p>
+    <div class="match-avatars">
+      <div class="avatar avatar--lg" id="matchAvatarMe">Y</div>
+      <div class="avatar avatar--lg" id="matchAvatarThem">?</div>
+    </div>
+    <button class="btn btn--primary btn--block" id="matchChatBtn">Start chatting</button>
+    <button class="btn btn--ghost btn--block" id="matchDismissBtn">Keep swiping</button>
+  </div>
+</div>
+
+<div class="overlay" id="callOverlay" hidden>
+  <div class="call-card call-card--rtc">
+    <h3 id="callTitle">Calling…</h3>
+    <p class="muted-sm" id="callSubtitle">Real WebRTC media, routed through a free public signalling broker for this demo — see the note below.</p>
+
+    <div class="video-stage" id="videoStage">
+      <video id="remoteVideo" autoplay playsinline></video>
+      <video id="localVideo" autoplay playsinline muted></video>
+      <div class="face-warning" id="faceWarning" hidden>⚠️ Face not visible — ending call in <span id="faceCountdown">10</span>s</div>
+      <canvas id="faceCanvas" hidden></canvas>
+    </div>
+
+    <div class="call-room-box" id="callRoomBox">
+      <label class="field">Your room code
+        <input type="text" id="roomCodeDisplay" readonly placeholder="generating…">
+      </label>
+      <div class="ob-nav">
+        <button class="btn btn--ghost btn--sm" id="copyRoomBtn">Copy code</button>
+        <button class="btn btn--ghost btn--sm" id="openOtherSideBtn">Open other side (test in new tab)</button>
+      </div>
+      <label class="field">Or connect to a code you were given
+        <input type="text" id="joinCodeInput" placeholder="paste a room code">
+      </label>
+      <button class="btn btn--primary btn--sm btn--block" id="joinRoomBtn">Connect</button>
+    </div>
+
+    <div class="call-controls">
+      <button class="round-btn round-btn--info" id="muteBtn" aria-label="Mute">🎙️</button>
+      <button class="round-btn round-btn--pass" id="callEndBtn" aria-label="End call">✕</button>
+      <button class="round-btn round-btn--info" id="camToggleBtn" aria-label="Toggle camera">🎥</button>
+    </div>
+    <p class="muted-sm">In production, matched users would connect automatically the instant both tap "call" — no code-sharing. That requires a signalling backend of our own (or a paid one); this demo uses PeerJS's free public broker so the real audio/video + face-presence check can be shown working today, live, on free hosting.</p>
+  </div>
+</div>
+
+<div class="overlay" id="infoOverlay" hidden>
+  <div class="info-card">
+    <p id="infoText"></p>
+    <button class="btn btn--primary btn--block" id="infoCloseBtn">Got it</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="js/app.js?v=3"></script>
+</body>
+</html>

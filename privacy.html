@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merj — Privacy &amp; GDPR</title>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  .legal-wrap{ max-width: 760px; margin: 0 auto; padding: 20px 20px 60px; }
+  .legal-wrap h1{ font-size: 26px; margin-top: 18px; }
+  .legal-wrap h2{ font-size: 18px; margin-top: 34px; border-top: 1px solid var(--border); padding-top: 22px; }
+  .legal-wrap h3{ font-size: 15px; margin-top: 18px; color: var(--muted); }
+  .legal-wrap p, .legal-wrap li{ color: var(--muted); font-size: 14.5px; }
+  .legal-wrap ul{ padding-left: 20px; }
+  .legal-wrap table{ width:100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  .legal-wrap th, .legal-wrap td{ text-align:left; padding: 8px 10px; border: 1px solid var(--border); color: var(--muted); vertical-align:top; }
+  .legal-wrap th{ color: var(--text); background: var(--surface); }
+  .disclaimer{
+    background: rgba(255,190,60,0.1); border:1px solid rgba(255,190,60,0.4); border-radius: var(--radius);
+    padding: 16px 18px; margin: 20px 0 30px; font-size: 13.5px; color: #ffd98a;
+  }
+  .disclaimer strong{ color:#ffbe3c; }
+  .back-link{ display:inline-block; margin-bottom: 10px; }
+  .toc{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 20px 0; }
+  .toc a{ display:block; font-size: 13.5px; padding: 3px 0; }
+</style>
+</head>
+<body>
+<div class="legal-wrap">
+  <a href="index.html" class="link-btn back-link">← Back to Merj</a>
+  <div class="brand"><span class="brand-mark">M</span>Merj</div>
+  <h1>Privacy Policy &amp; GDPR Notice</h1>
+  <p class="muted-sm">Draft version 0.1 — last updated for this prototype build.</p>
+
+  <div class="disclaimer">
+    <strong>This is a drafting template, not a compliance guarantee.</strong> It's written to cover the real
+    obligations a dating platform like Merj takes on (GDPR, biometric/special-category data, UK/EU age-assurance
+    duties, CCPA-style rights), but it has not been reviewed by a lawyer, doesn't yet reflect your final data flows
+    or sub-processors, and should not be published live until qualified counsel signs off — especially before you
+    process biometric data (face-scan age verification) or before you go live in any specific jurisdiction. Treat
+    every bracketed placeholder as something a real legal review must fill in or verify.
+  </div>
+
+  <div class="toc">
+    <a href="#who">1. Who we are &amp; how to reach us</a>
+    <a href="#data">2. What we collect, and why</a>
+    <a href="#biometric">3. Biometric &amp; age-verification data (special category)</a>
+    <a href="#legal">4. Legal basis for processing</a>
+    <a href="#sharing">5. Who we share data with</a>
+    <a href="#transfers">6. International transfers</a>
+    <a href="#retention">7. How long we keep data</a>
+    <a href="#rights">8. Your rights</a>
+    <a href="#security">9. Security</a>
+    <a href="#minors">10. Minors</a>
+    <a href="#cookies">11. Cookies &amp; tracking</a>
+    <a href="#automated">12. Automated decisions (trust &amp; safety scoring)</a>
+    <a href="#breach">13. Breach notification</a>
+    <a href="#changes">14. Changes to this policy</a>
+  </div>
+
+  <h2 id="who">1. Who we are &amp; how to reach us</h2>
+  <p>Merj ("we", "us") operates the Merj dating platform. For the purposes of GDPR, Merj is the data controller
+  for account, profile, and matching data. Contact our Data Protection contact at
+  <strong>[privacy@merj.app — placeholder]</strong>. <em>[If you appoint a formal Data Protection Officer, name
+  them here; required once you process biometric data at scale under Art. 37.]</em></p>
+
+  <h2 id="data">2. What we collect, and why</h2>
+  <table>
+    <tr><th>Category</th><th>Examples</th><th>Why</th></tr>
+    <tr><td>Account</td><td>Username, email, phone number, date of birth</td><td>Create your account, verify you're 18+, let you log in</td></tr>
+    <tr><td>Profile</td><td>Photos, bio, reasons for using Merj, interests, linked social handles</td><td>Show your profile to potential matches</td></tr>
+    <tr><td>Location</td><td>Live or fixed location, distance to other users</td><td>Sort and filter Discover by proximity</td></tr>
+    <tr><td>Verification</td><td>Phone OTP confirmation, optional ID document, optional face-scan age result</td><td>Confirm you're a real, unique, 18+ person</td></tr>
+    <tr><td>Activity</td><td>Swipes, matches, messages, call logs (participants &amp; duration, not content or recordings)</td><td>Run the core matching &amp; chat features, show your own activity history back to you</td></tr>
+    <tr><td>Safety signals</td><td>Reports filed/received, device &amp; IP metadata, behavioural signals (see §12)</td><td>Detect fake, bot, and scam accounts</td></tr>
+    <tr><td>Contacts (opt-in only)</td><td>Hashed phone numbers from your device contacts, only if you turn this on</td><td>Suggest or exclude people you already know</td></tr>
+    <tr><td>Communications</td><td>Notification preferences, delivery logs</td><td>Send match/message/like/call alerts via the channels you choose</td></tr>
+  </table>
+
+  <h2 id="biometric">3. Biometric &amp; age-verification data (special category)</h2>
+  <p>Where you choose to age-verify using a face scan, that scan is <strong>processed to produce a single yes/no
+  age estimate and is not retained</strong> once that result is produced. We do not build a facial recognition
+  template, we do not use the scan to identify you against other people, and we do not share the raw image with
+  anyone outside the verification process itself. Because this is biometric data under GDPR Art. 9, we only
+  process it with your explicit, separate consent, collected at the moment you choose to verify — never bundled
+  into general account sign-up consent. <em>[If you use a third-party age-assurance vendor, name them here along
+  with a link to their own privacy policy, since they will be a sub-processor of biometric data.]</em></p>
+  <p>ID documents submitted for optional ID verification are handled the same way: used only to confirm identity
+  and immediately discarded or securely deleted after that one-time check, not stored as part of your ongoing
+  profile.</p>
+
+  <h2 id="legal">4. Legal basis for processing</h2>
+  <ul>
+    <li><strong>Contract</strong> — most core matching/chat functionality, because it's what you sign up for.</li>
+    <li><strong>Consent</strong> — biometric age verification, marketing communications, contact discovery, optional 18+ content.</li>
+    <li><strong>Legitimate interest</strong> — fraud/fake-account detection, platform security, keeping minors off the platform.</li>
+    <li><strong>Legal obligation</strong> — responding to lawful requests from authorities, retaining records where law requires it.</li>
+  </ul>
+
+  <h2 id="sharing">5. Who we share data with</h2>
+  <p>We do not sell your personal data. We share limited data with: infrastructure and hosting providers,
+  SMS/email delivery providers (for the notifications you opt into), an age/ID verification vendor (if used),
+  and payment/ad providers (for the "watch an ad for more swipes" feature) — each bound by a data processing
+  agreement. <em>[List actual named sub-processors here before going live — this is a required GDPR disclosure,
+  not optional boilerplate.]</em></p>
+
+  <h2 id="transfers">6. International transfers</h2>
+  <p>Where data is processed outside your country (e.g. a cloud region, or a verification vendor based
+  elsewhere), we rely on Standard Contractual Clauses or an equivalent adequacy mechanism. <em>[Confirm actual
+  hosting regions once infrastructure is finalised.]</em></p>
+
+  <h2 id="retention">7. How long we keep data</h2>
+  <table>
+    <tr><th>Data</th><th>Retention</th></tr>
+    <tr><td>Active account &amp; profile</td><td>For as long as your account is active</td></tr>
+    <tr><td>Paused account</td><td>Retained; not shown to others until unpaused</td></tr>
+    <tr><td>Deleted account</td><td>Deleted or irreversibly anonymised within 30 days, except where we must retain records for fraud/legal reasons</td></tr>
+    <tr><td>Biometric scan (raw)</td><td>Not retained beyond the verification check itself</td></tr>
+    <tr><td>Messages after account deletion</td><td>Removed from your side; a copy may persist in a former match's thread for a limited window unless also deleted</td></tr>
+    <tr><td>Reports &amp; safety signals</td><td>Retained longer than normal activity data specifically to detect repeat-offender patterns across accounts</td></tr>
+  </table>
+
+  <h2 id="rights">8. Your rights</h2>
+  <p>Subject to local law, you can: access the data we hold on you, correct it, request deletion, export it
+  (portability), object to or restrict certain processing, and withdraw consent at any time without affecting
+  processing already carried out. Most of these are also available directly in-app: <strong>Settings → pause,
+  visibility, delete account</strong>. For anything else, contact us at the address in §1. You also have the
+  right to lodge a complaint with your local data protection authority.</p>
+
+  <h2 id="security">9. Security</h2>
+  <p>We apply encryption in transit, access controls limiting who can view verification data, and monitoring
+  for unauthorised access. No system is perfectly secure; see §13 for what happens if that fails.</p>
+
+  <h2 id="minors">10. Minors</h2>
+  <p>Merj is strictly for people 18 and older. We do not knowingly collect data from anyone under 18; accounts
+  found to belong to a minor are removed and the associated data deleted. Reports flagging a suspected minor
+  are treated as high priority.</p>
+
+  <h2 id="cookies">11. Cookies &amp; tracking</h2>
+  <p>We use strictly necessary cookies/local storage to keep you logged in and remember preferences (e.g. your
+  notification choices, username-change cooldown). <em>[Add an analytics/ads cookie table here once those
+  providers are chosen, with a consent banner offering reject/accept before anything non-essential loads.]</em></p>
+
+  <h2 id="automated">12. Automated decisions (trust &amp; safety scoring)</h2>
+  <p>We use an automated scoring system that combines signals — such as location/phone consistency, image
+  duplication, account age, messaging behaviour, and report history — to flag accounts that may be fake, bot,
+  or scam profiles. This scoring can reduce a profile's visibility or temporarily restrict messaging pending
+  human review; it does not, on its own, permanently ban an account without a person reviewing the case first
+  above a defined severity threshold. You can request a human review of any automated restriction placed on
+  your account.</p>
+
+  <h2 id="breach">13. Breach notification</h2>
+  <p>If a personal data breach is likely to result in a risk to your rights and freedoms, we will notify the
+  relevant supervisory authority within 72 hours of becoming aware of it, and notify affected users without
+  undue delay where the risk to them is high.</p>
+
+  <h2 id="changes">14. Changes to this policy</h2>
+  <p>We'll post material changes here with an updated date, and seek fresh consent where a change affects
+  processing you previously consented to (e.g. biometric data use).</p>
+
+  <p class="muted-sm" style="margin-top:40px;">Questions about this policy: <strong>[privacy@merj.app — placeholder]</strong></p>
+</div>
+</body>
+</html>
