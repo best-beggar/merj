@@ -6,7 +6,7 @@
 <title>Merj — Swipe. Match. Mean it.</title>
 <meta name="description" content="Merj is a free dating platform built around honest matching, real safety controls, and zero paywalls.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff3b6e'/%3E%3Cstop offset='0.55' stop-color='%23ff7a3d'/%3E%3Cstop offset='1' stop-color='%239b5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M16 25.8l-1.9-1.76C7.2 18.2 3 14.4 3 9.9 3 6.2 5.9 3.3 9.6 3.3c2.1 0 4.1 1 5.4 2.5 1.3-1.5 3.3-2.5 5.4-2.5 3.7 0 6.6 2.9 6.6 6.6 0 4.5-4.2 8.3-11.1 14.1L16 25.8z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=4">
+<link rel="stylesheet" href="css/styles.css?v=5">
 </head>
 <body>
 
@@ -306,13 +306,24 @@
     <header class="app-header">
       <div class="app-header-title">Matches</div>
     </header>
-    <div class="scroll-panel" id="matchesList">
-      <div class="empty-state" id="matchesEmpty">
-        <div class="deck-empty-icon">💫</div>
-        <h3>No matches yet</h3>
-        <p class="muted">Keep swiping — mutual likes show up here instantly.</p>
+    <div class="scroll-panel">
+      <div class="sort-bar">
+        <label for="mainMatchesSort">Sort</label>
+        <select id="mainMatchesSort">
+          <option value="proximity">Proximity</option>
+          <option value="age">Age</option>
+          <option value="online">Online first</option>
+          <option value="reason">Shared reason</option>
+        </select>
       </div>
-      <!-- match rows injected by JS -->
+      <div id="matchesList">
+        <div class="empty-state" id="matchesEmpty">
+          <div class="deck-empty-icon">💫</div>
+          <h3>No matches yet</h3>
+          <p class="muted">Keep swiping — mutual likes show up here instantly.</p>
+        </div>
+        <!-- match rows injected by JS -->
+      </div>
     </div>
     <nav class="bottom-nav">
       <button class="nav-btn" data-nav="discover"><span>🔥</span>Discover</button>
@@ -451,6 +462,24 @@
           <input type="checkbox" id="pauseToggle">
           <span class="toggle-switch"></span>
         </label>
+        <label class="toggle-row">
+          <span>Show my online status <em>(a green dot lets others see when you're active — off just shows nothing, not a fake "last seen")</em></span>
+          <input type="checkbox" id="onlineStatusToggle" checked>
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <div class="panel-section">
+        <h4>Who can call you</h4>
+        <div class="choice-row">
+          <button class="choice-card" data-callperm="everyone"><strong>Everyone</strong><span>Any phone-verified user can call you</span></button>
+          <button class="choice-card is-selected" data-callperm="list"><strong>My matches only</strong><span>Only people you've approved below can call</span></button>
+          <button class="choice-card" data-callperm="nobody"><strong>Nobody</strong><span>All calls are logged, never rung through — approve people from the log instead</span></button>
+        </div>
+        <div id="approvedCallersBox">
+          <p class="muted-sm">Approved callers (from your matches):</p>
+          <div id="approvedCallersList"></div>
+        </div>
       </div>
 
       <div class="panel-section">
@@ -540,12 +569,35 @@
 
       <div class="activity-pane is-active" data-apane="likes">
         <p class="muted-sm">Free on Merj — no "see who likes you" paywall. That's the whole point.</p>
+        <div class="sort-bar">
+          <label for="likesSort">Sort</label>
+          <select id="likesSort">
+            <option value="proximity">Proximity</option>
+            <option value="age">Age</option>
+            <option value="online">Online first</option>
+          </select>
+        </div>
         <div id="likesList"></div>
       </div>
       <div class="activity-pane" data-apane="matches">
+        <div class="sort-bar">
+          <label for="matchesSort">Sort</label>
+          <select id="matchesSort">
+            <option value="proximity">Proximity</option>
+            <option value="age">Age</option>
+            <option value="online">Online first</option>
+            <option value="reason">Shared reason</option>
+          </select>
+        </div>
         <div id="activityMatchesList"></div>
       </div>
       <div class="activity-pane" data-apane="calls">
+        <div class="panel-section" id="callRequestsSection">
+          <h4>Call requests</h4>
+          <p class="muted-sm">Calls that didn't ring through because of your "who can call you" setting.</p>
+          <div id="callRequestsList"></div>
+        </div>
+        <h4 style="margin:16px 0 8px;">Call history</h4>
         <div id="callHistoryList"></div>
       </div>
     </div>
@@ -556,6 +608,33 @@
       <button class="nav-btn" data-nav="profile"><span>👤</span>Profile</button>
       <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
     </nav>
+  </section>
+
+  <!-- ---------- PROFILE DETAIL (viewed from deck info, matches, or likes) ---------- -->
+  <section class="screen" data-screen="profileDetail">
+    <header class="app-header">
+      <button class="icon-btn" id="detailBackBtn" aria-label="Back">←</button>
+      <div class="app-header-title">Profile</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="detail-photo-stage" id="detailPhotoStage">
+        <div class="photo-dots" id="detailPhotoDots"></div>
+        <div class="photo-tap-zone photo-tap-zone--prev" id="detailPrevZone"></div>
+        <div class="photo-tap-zone photo-tap-zone--next" id="detailNextZone"></div>
+        <img id="detailPhotoImg" alt="">
+      </div>
+      <div class="detail-name-row">
+        <h2 id="detailName">Name, 00</h2>
+      </div>
+      <p class="muted-sm" id="detailMeta">0 km away · Online now</p>
+      <div class="card-tags" id="detailTags"></div>
+      <p class="card-bio" id="detailBio"></p>
+      <div id="detailVerifiedRow"></div>
+      <div class="detail-actions">
+        <button class="btn btn--outline" id="detailUnmatchBtn" hidden>Unmatch</button>
+        <button class="btn btn--primary" id="detailMessageBtn">Message</button>
+      </div>
+    </div>
   </section>
 
 </div><!-- /app-frame -->
@@ -617,10 +696,30 @@
   </div>
 </div>
 
+<div class="overlay" id="adOverlay" hidden>
+  <div class="info-card">
+    <h3>Ad — unlock +10 swipes</h3>
+    <p class="muted-sm" id="adCopy">Playing a short ad…</p>
+    <div class="ad-progress"><div class="ad-progress-fill" id="adProgressFill"></div></div>
+    <button class="btn btn--primary btn--block" id="adCloseBtn" disabled>Watching… <span id="adCountdown">6</span>s</button>
+  </div>
+</div>
+
+<div class="overlay" id="verifyPromptOverlay" hidden>
+  <div class="info-card">
+    <h3>Quick safety check</h3>
+    <p class="muted-sm" id="verifyPromptText">Did the person on that call match their profile pictures?</p>
+    <div class="verify-prompt-actions">
+      <button class="btn btn--outline" id="verifyNoBtn">No, something was off</button>
+      <button class="btn btn--primary" id="verifyYesBtn">Yes, that was them</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

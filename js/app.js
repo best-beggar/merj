@@ -32,6 +32,19 @@
     return "data:image/svg+xml," + encodeURIComponent(svg);
   }
 
+  // A small set of "photos" per profile (varied backdrop/outfit tint) so multi-photo browsing has something real to page through.
+  function personSVGSet(params){
+    const alt1 = { ...params, bg: shiftHex(params.bg, -14), top: shiftHex(params.top, 18) };
+    const alt2 = { ...params, bg: shiftHex(params.bg, 14), top: shiftHex(params.top, -18) };
+    return [personSVG(params), personSVG(alt1), personSVG(alt2)];
+  }
+  function shiftHex(hex, amt){
+    const n = parseInt(hex.slice(1), 16);
+    const clamp = v => Math.max(0, Math.min(255, v));
+    const r = clamp(((n>>16)&255) + amt), g = clamp(((n>>8)&255) + amt), b = clamp((n&255) + amt);
+    return "#" + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+  }
+
   /* ---------------- Mock data ---------------- */
   const REASON_OPTIONS = ["No strings fun","Same day sex","Just friends","Long term","Dinner dates","Video chat fun"];
 
@@ -79,8 +92,41 @@
     female1: { bg:"#ffe3ec", skin:"#f2c9a4", hair:"#26140c", style:"long",  top:"#ff3b6e" },
     male1:   { bg:"#f3e8ff", skin:"#e8b892", hair:"#1c1c1c", style:"short", top:"#9b5cff" },
   };
-  PROFILES.forEach(p => { const a = AVATAR_PARAMS[p.id]; if(a) p.photoUri = personSVG(a); });
-  LIKES_RECEIVED.forEach(p => { const a = AVATAR_PARAMS[p.id]; if(a) p.photoUri = personSVG(a); });
+  // Minutes since last active, mocked to demonstrate the online-now / recently-active / stale /
+  // hidden-after-60-days tiers described in the discovery rules.
+  const LAST_ACTIVE_MINS = {
+    1: 3,             // Aoife — online now
+    2: 40,            // Sam
+    3: 60 * 5,        // Priya — a few hours ago
+    4: 60 * 24 * 20,  // Jordan — 20 days, deprioritised
+    5: 15,            // Maeve — online now
+    6: 60 * 24 * 70,  // Cian — 70 days, hidden from discovery entirely
+    7: 60 * 24 * 2,   // Beth — 2 days ago
+    8: 60 * 24 * 16,  // Rio — 16 days, deprioritised
+    101: 8, 102: 60 * 24 * 3, 103: 25,
+  };
+  PROFILES.forEach(p => {
+    const a = AVATAR_PARAMS[p.id];
+    if(a){ p.photos = personSVGSet(a); p.photoUri = p.photos[0]; }
+    p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
+  });
+  LIKES_RECEIVED.forEach(p => {
+    const a = AVATAR_PARAMS[p.id];
+    if(a){ p.photos = personSVGSet(a); p.photoUri = p.photos[0]; }
+    p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
+  });
+
+  const ONLINE_MINS = 10, STALE_DAYS = 14, HIDDEN_DAYS = 60;
+  const isOnline = p => p.lastActiveMins <= ONLINE_MINS;
+  const isStale = p => p.lastActiveMins > STALE_DAYS * 24 * 60;
+  const isHiddenFromDiscovery = p => p.lastActiveMins > HIDDEN_DAYS * 24 * 60;
+  function lastSeenLabel(p){
+    if(isOnline(p)) return "Online now";
+    const mins = p.lastActiveMins;
+    if(mins < 60) return `Active ${mins}m ago`;
+    if(mins < 60*24) return `Active ${Math.round(mins/60)}h ago`;
+    return `Active ${Math.round(mins/(60*24))}d ago`;
+  }
 
   /* ---------------- State ---------------- */
   const state = {
@@ -90,7 +136,7 @@
     swipesUsed: 0,
     swipesLimit: 200,
     deckIndex: 0,
-    deck: [...PROFILES],
+    deck: PROFILES.filter(p => !isHiddenFromDiscovery(p)).sort((a,b) => (isStale(a)?1:0) - (isStale(b)?1:0)),
     matches: [],
     chats: {},
     activeChatId: null,
@@ -112,7 +158,14 @@
     myReportTrust: 1,         // weight applied to reports THIS user files; drops if they over-report
     callHistory: [],
     likesReceived: [...LIKES_RECEIVED],
-    rtc: { peer:null, call:null, localStream:null, roomCode:null, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null },
+    showOnlineStatus: true,
+    callPermission: "list",      // "everyone" | "list" | "nobody"
+    approvedCallers: new Set(),  // names allowed to call regardless of callPermission
+    callRequestLog: [],
+    detailProfile: null,
+    detailPhotoIndex: 0,
+    detailContext: "deck",       // "deck" | "match" | "like"
+    rtc: { peer:null, call:null, localStream:null, roomCode:null, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null, activeCallProfileId:null, connected:false },
   };
 
   const $ = (sel, root) => (root||document).querySelector(sel);
@@ -120,9 +173,28 @@
 
   function avatarHtml(profile, extraClass){
     const cls = "avatar" + (extraClass ? " " + extraClass : "");
-    return profile.photoUri
+    const inner = profile.photoUri
       ? `<div class="${cls}" style="background-image:url('${profile.photoUri}')"></div>`
       : `<div class="${cls}">${profile.initial}</div>`;
+    if(!state.showOnlineStatus || typeof profile.lastActiveMins !== "number") return inner;
+    const dotCls = isOnline(profile) ? "online-dot" : "online-dot online-dot--offline";
+    return `<div class="avatar-wrap">${inner}<span class="${dotCls}"></span></div>`;
+  }
+
+  function sortProfiles(list, key){
+    const arr = [...list];
+    if(key === "age") arr.sort((a,b) => a.age - b.age);
+    else if(key === "online") arr.sort((a,b) => {
+      const ao = isOnline(a) ? 0 : 1, bo = isOnline(b) ? 0 : 1;
+      if(ao !== bo) return ao - bo;
+      return (a.lastActiveMins ?? 9e9) - (b.lastActiveMins ?? 9e9);
+    });
+    else if(key === "reason") arr.sort((a,b) => {
+      const score = p => (p.reasons || []).filter(r => state.ob.reasons.includes(r)).length;
+      return score(b) - score(a);
+    });
+    else arr.sort((a,b) => (a.distance ?? 0) - (b.distance ?? 0));
+    return arr;
   }
 
   function toast(msg, ms){
@@ -348,6 +420,7 @@
     $$(".swipe-card", area).forEach(c=>c.remove());
     $("#deckEmpty").hidden = true;
     $("#deckOut").hidden = true;
+    updateSwipeMeter();
 
     if(state.swipesUsed >= state.swipesLimit){
       $("#deckOut").hidden = false;
@@ -358,7 +431,10 @@
       $("#deckEmpty").hidden = false;
       return;
     }
-    remaining.forEach((profile, i) => area.insertBefore(buildCard(profile), area.firstChild));
+    // Append farthest-back card first so the current top-of-stack card (state.deck[deckIndex])
+    // ends up LAST in DOM order — which is what paints on top AND what ":last-child" matches,
+    // so it's both the visible card and the one drag/tap handlers act on.
+    remaining.forEach(profile => area.appendChild(buildCard(profile)));
     updateSwipeMeter();
   }
 
@@ -366,21 +442,52 @@
     const card = document.createElement("div");
     card.className = "swipe-card";
     card.dataset.id = profile.id;
+    card.dataset.photoIndex = "0";
     const lockBadge = profile.has18
       ? `<div class="lock-badge">🔒 18+ ${profile.ext18Mode === "open" ? "unlocked" : "extension"}</div>` : "";
-    const photoStyle = profile.photoUri ? ` style="background-image:url('${profile.photoUri}')"` : "";
+    const photos = profile.photos && profile.photos.length ? profile.photos : (profile.photoUri ? [profile.photoUri] : []);
+    const photoStyle = photos.length ? ` style="background-image:url('${photos[0]}')"` : "";
+    const dots = photos.length > 1
+      ? `<div class="photo-dots">${photos.map((_,i)=>`<span class="${i===0?"is-active":""}"></span>`).join("")}</div>
+         <div class="photo-tap-zone photo-tap-zone--prev"></div>
+         <div class="photo-tap-zone photo-tap-zone--next"></div>`
+      : "";
+    const statusBadge = (state.showOnlineStatus && typeof profile.lastActiveMins === "number")
+      ? `<div class="card-status${isOnline(profile) ? "" : " is-offline"}"><span class="dot"></span>${lastSeenLabel(profile)}</div>`
+      : "";
     card.innerHTML = `
       <div class="stamp stamp--like">LIKE</div>
       <div class="stamp stamp--pass">PASS</div>
-      <div class="card-photo"${photoStyle}>${profile.photoUri ? "" : profile.initial}${lockBadge}</div>
+      <div class="card-photo"${photoStyle}>${photos.length ? "" : profile.initial}${dots}${statusBadge}${lockBadge}</div>
       <div class="card-body">
         <div class="card-name-row"><h3>${profile.name}, ${profile.age}</h3><span class="distance">${profile.distance} km</span></div>
         <div class="card-tags">${profile.reasons.map(r=>`<span class="tag">${r}</span>`).join("")}</div>
         <p class="card-bio">${profile.bio}</p>
         ${profile.verified ? '<div class="card-verified">✓ Phone verified</div>' : ''}
       </div>`;
+    if(photos.length > 1) wirePhotoCarousel(card, photos);
     attachDrag(card, profile);
     return card;
+  }
+
+  function wirePhotoCarousel(card, photos){
+    const photoEl = card.querySelector(".card-photo");
+    const dots = card.querySelectorAll(".photo-dots span");
+    function show(idx){
+      card.dataset.photoIndex = String(idx);
+      photoEl.style.backgroundImage = `url('${photos[idx]}')`;
+      dots.forEach((d,i)=> d.classList.toggle("is-active", i===idx));
+    }
+    card.querySelector(".photo-tap-zone--prev").addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const idx = (Number(card.dataset.photoIndex) - 1 + photos.length) % photos.length;
+      show(idx);
+    });
+    card.querySelector(".photo-tap-zone--next").addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const idx = (Number(card.dataset.photoIndex) + 1) % photos.length;
+      show(idx);
+    });
   }
 
   function attachDrag(card, profile){
@@ -429,8 +536,27 @@
       const isMatch = Math.random() < 0.45;
       if(isMatch) createMatch(profile);
     }
+    maybeDripNewLike();
     setTimeout(()=>{ renderDeck(); }, 220);
     updateSwipeMeter();
+  }
+
+  // Simulates likes arriving from other users over time, with an on-screen alert — demonstrates
+  // the "notify as it happens" behaviour a real backend would push via websocket/notification.
+  const LIKE_DRIP_POOL = [
+    { id:104, name:"Sinead", age:27, distance:6, initial:"S" },
+    { id:105, name:"Liam", age:29, distance:9, initial:"L" },
+  ];
+  AVATAR_PARAMS[104] = { bg:"#eafff5", skin:"#e8b892", hair:"#2c1c12", style:"curly", top:"#0ca678" };
+  AVATAR_PARAMS[105] = { bg:"#fff5e6", skin:"#f0c8a0", hair:"#141110", style:"short", top:"#f08c00" };
+  LIKE_DRIP_POOL.forEach(p => { p.photos = personSVGSet(AVATAR_PARAMS[p.id]); p.photoUri = p.photos[0]; p.lastActiveMins = 2; });
+
+  function maybeDripNewLike(){
+    if(state.swipesUsed % 4 !== 0 || LIKE_DRIP_POOL.length === 0) return;
+    const liker = LIKE_DRIP_POOL.shift();
+    state.likesReceived.unshift(liker);
+    toast(`💗 ${liker.name} likes you! Check Activity to say hi.`);
+    if(state.screen === "activity") renderActivity();
   }
 
   $("#passBtn").addEventListener("click", ()=>{
@@ -448,7 +574,7 @@
   $("#infoBtn").addEventListener("click", ()=>{
     const profile = state.deck[state.deckIndex];
     if(!profile) return;
-    showInfo(`${profile.name}, ${profile.age} — ${profile.distance}km away.\n\nLooking for: ${profile.reasons.join(", ")}.\nInterests: ${profile.interests.join(", ")}.\n\n${profile.bio}`);
+    openProfileDetail(profile, "deck");
   });
 
   function updateSwipeMeter(){
@@ -457,16 +583,43 @@
     $("#swipeCount").textContent = `${left} / ${state.swipesLimit} swipes left today`;
   }
 
-  $("#watchAdBtn").addEventListener("click", (e)=>{
-    e.target.disabled = true;
-    e.target.textContent = "Playing ad… (5s)";
-    setTimeout(()=>{
-      state.swipesLimit += 10;
-      toast("+10 swipes unlocked!");
-      e.target.disabled = false;
-      e.target.textContent = "Watch ad for +10 swipes";
-      renderDeck();
-    }, 1600);
+  // Rewarded-ad flow. This is the ONE ad surface in the app on purpose — opt-in, user-triggered,
+  // clearly telegraphed reward. Real integration point: replace the setInterval countdown below
+  // with a real rewarded-ad SDK call (e.g. Google Ad Manager's rewarded web ad unit, or AdMob
+  // rewarded ads for the eventual native app) and call grantAdReward() from its "reward earned"
+  // callback instead of the timer. Signing up for/getting approved by an ad network is an account
+  // step only you can do — this just leaves the exact spot to plug it in.
+  function playRewardedAd(){
+    $("#adOverlay").hidden = false;
+    $("#adCloseBtn").disabled = true;
+    let secs = 6;
+    $("#adCountdown").textContent = secs;
+    $("#adProgressFill").style.width = "0%";
+    requestAnimationFrame(()=> $("#adProgressFill").style.width = "100%");
+    const timer = setInterval(()=>{
+      secs--;
+      if(secs <= 0){
+        clearInterval(timer);
+        $("#adCloseBtn").disabled = false;
+        $("#adCloseBtn").innerHTML = "Claim +10 swipes";
+        $("#adCopy").textContent = "Reward earned — tap to close.";
+      } else {
+        $("#adCountdown").textContent = secs;
+      }
+    }, 1000);
+  }
+  function grantAdReward(){
+    state.swipesLimit += 10;
+    toast("+10 swipes unlocked!");
+    renderDeck();
+  }
+  $("#watchAdBtn").addEventListener("click", playRewardedAd);
+  $("#adCloseBtn").addEventListener("click", ()=>{
+    if($("#adCloseBtn").disabled) return;
+    $("#adOverlay").hidden = true;
+    $("#adCloseBtn").innerHTML = 'Watching… <span id="adCountdown">6</span>s';
+    $("#adCopy").textContent = "Playing a short ad…";
+    grantAdReward();
   });
 
   /* ---------------- Matching + chat ---------------- */
@@ -499,17 +652,32 @@
     const list = $("#matchesList");
     $$(".match-row", list).forEach(r=>r.remove());
     $("#matchesEmpty").hidden = state.matches.length > 0;
-    state.matches.forEach(profile=>{
+    const sorted = sortProfiles(state.matches, $("#mainMatchesSort")?.value || "proximity");
+    sorted.forEach(profile=>{
       const chat = state.chats[profile.id] || [];
       const last = chat[chat.length-1];
       const row = document.createElement("div");
       row.className = "match-row" + (chat.length<=1 ? " is-new" : "");
       row.innerHTML = `${avatarHtml(profile)}
         <div><strong>${profile.name}</strong><p class="last-msg">${last ? (last.from==="me"?"You: ":"") + last.text : "Say hi!"}</p></div>
-        <div class="match-meta">${profile.distance} km</div>`;
-      row.addEventListener("click", ()=> openChat(profile.id));
+        <div class="match-meta">${profile.distance} km</div>
+        <button class="icon-btn" style="width:32px;height:32px;font-size:14px;" data-msg aria-label="Message">💬</button>
+        <button class="icon-btn" style="width:32px;height:32px;font-size:12px;" data-unmatch aria-label="Unmatch">✕</button>`;
+      row.querySelector("[data-msg]").addEventListener("click", e=>{ e.stopPropagation(); openChat(profile.id); });
+      row.querySelector("[data-unmatch]").addEventListener("click", e=>{ e.stopPropagation(); unmatchProfile(profile.id); });
+      row.addEventListener("click", ()=> openProfileDetail(profile, "match"));
       list.appendChild(row);
     });
+  }
+
+  function unmatchProfile(id){
+    const profile = state.matches.find(m=>m.id===id);
+    if(!profile) return;
+    state.matches = state.matches.filter(m=>m.id!==id);
+    delete state.chats[id];
+    toast(`Unmatched from ${profile.name}.`);
+    renderMatches();
+    if(state.screen === "activity") renderActivity();
   }
 
   function openChat(id){
@@ -569,8 +737,16 @@
       peer.on("error", (err)=> { console.error("Peer error", err); toast("Call connection error: " + err.type); });
       peer.on("call", (incomingCall)=>{
         const wantVideo = incomingCall.metadata && incomingCall.metadata.video;
+        const callerName = (incomingCall.metadata && incomingCall.metadata.callerName) || "Unknown caller";
+        if(!shouldAcceptCall(callerName)){
+          incomingCall.close();
+          logBlockedCall(callerName, wantVideo ? "video" : "audio", incomingCall.peer);
+          return;
+        }
         navigator.mediaDevices.getUserMedia({ audio:true, video: !!wantVideo }).then(stream=>{
           state.rtc.localStream = stream;
+          state.rtc.activeCallProfileName = callerName;
+          state.rtc.wasVideo = !!wantVideo;
           $("#localVideo").srcObject = stream;
           incomingCall.answer(stream);
           wireCall(incomingCall, wantVideo);
@@ -588,6 +764,8 @@
       $("#remoteVideo").srcObject = remoteStream;
       $("#callRoomBox").hidden = true;
       $("#callTitle").textContent = "Connected";
+      state.rtc.connected = true;
+      state.rtc.wasVideo = isVideo;
       if(isVideo && !state.rtc.skipFaceCheck) startFaceCheck();
     });
     call.on("close", ()=> endCall(false));
@@ -606,6 +784,9 @@
     if(!profile) return;
     const isVideo = kind === "video";
     state.rtc.activeCallProfileName = profile.name;
+    state.rtc.activeCallProfileId = profile.id;
+    state.rtc.connected = false;
+    state.rtc.wasVideo = isVideo;
     state.rtc.skipFaceCheck = !!(profile.has18 && state.ageVerified); // consensual 18+ pairing: face-required check doesn't apply
     openCallOverlay(isVideo, `${isVideo ? "Video" : "Audio"} calling ${profile.name}…`);
     $("#callRoomBox").hidden = false;
@@ -631,6 +812,7 @@
   function joinRoom(code){
     if(!code) { toast("Enter a room code first."); return; }
     const isVideo = $("#videoStage").style.display !== "none";
+    state.rtc.activeCallProfileId = null; // ad-hoc connection, not tied to a known profile
     navigator.mediaDevices.getUserMedia({ audio:true, video:isVideo })
       .then(stream=>{
         state.rtc.localStream = stream;
@@ -638,7 +820,7 @@
         return ensurePeer();
       })
       .then(peer=>{
-        const call = peer.call(code.trim(), state.rtc.localStream, { metadata:{ video:isVideo } });
+        const call = peer.call(code.trim(), state.rtc.localStream, { metadata:{ video:isVideo, callerName: state.ob.username || "Someone" } });
         wireCall(call, isVideo);
         $("#callTitle").textContent = "Connecting…";
       })
@@ -654,6 +836,7 @@
     $("#remoteVideo").srcObject = null;
     $("#localVideo").srcObject = null;
     $("#callOverlay").hidden = true;
+    const wasConnected = state.rtc.connected;
     if(logHistory !== false){
       const isVideo = $("#videoStage").style.display !== "none";
       state.callHistory.unshift({
@@ -662,7 +845,10 @@
         at: new Date(),
         durationSec: Math.floor(10 + Math.random()*180),
       });
+      if(state.screen === "activity") renderActivity();
     }
+    if(wasConnected) maybeShowVerifyPrompt();
+    state.rtc.connected = false;
   }
 
   $("#audioCallBtn").addEventListener("click", ()=> startCall("audio"));
@@ -797,15 +983,7 @@
     $("#ageVerifyBtn").textContent = state.ageVerified ? "Verified" : "Verify";
     $("#ageVerifyBtn").disabled = state.ageVerified;
 
-    // profile photos (reuse uploaded ones)
-    const grid = $("#profilePhotoGrid");
-    grid.innerHTML = "";
-    state.ob.photos.forEach((p,i)=>{
-      const slot = document.createElement("div");
-      slot.className = "photo-slot" + (p ? " has-photo" : "");
-      slot.innerHTML = p ? `<img src="${p}" alt="Photo ${i+1}">` : `<span>📷<br>Empty</span>`;
-      grid.appendChild(slot);
-    });
+    renderProfilePhotoGrid();
 
     $("#ext18Locked").style.display = state.ageVerified ? "none" : "block";
     $("#ext18Choices").style.opacity = state.ageVerified ? "1" : "0.4";
@@ -903,7 +1081,9 @@
     if(/whatsapp|telegram|snapchat me|cash ?app|venmo|invest|crypto/i.test(profile.bio)){ score += 15; factors.push("Bio contains off-platform redirect / financial language"); }
     const reportWeight = profile._reportWeight || 0;
     if(reportWeight > 0){ score += Math.min(reportWeight * 12, 30); factors.push(`${reportWeight.toFixed(1)} weighted report(s) filed against this profile`); }
-    score = Math.min(score, 100);
+    if(profile.videoVerified){ score -= 25; factors.push("✓ Video-verified: a matched user confirmed they matched their photos on a call (reduces risk)"); }
+    if(profile.videoMismatchReported){ score += 25; factors.push("A video call partner reported this profile didn't match who appeared on camera"); }
+    score = Math.max(0, Math.min(score, 100));
     let tier, action;
     if(score >= 50){ tier = "high"; action = "Auto-limited: messaging/swiping frozen pending human review."; }
     else if(score >= 20){ tier = "med"; action = "Shadow-throttled: shown to fewer people while signals accumulate."; }
@@ -972,20 +1152,29 @@
     if(state.likesReceived.length === 0){
       likesList.innerHTML = `<p class="muted-sm">No one new yet — check back soon.</p>`;
     }
-    state.likesReceived.forEach(p=>{
+    sortProfiles(state.likesReceived, $("#likesSort")?.value || "proximity").forEach(p=>{
       const row = document.createElement("div");
       row.className = "like-row";
       row.innerHTML = `${avatarHtml(p)}
         <div><strong>${p.name}, ${p.age}</strong><p class="last-msg">${p.distance} km away</p></div>
         <div class="like-meta"><button class="btn btn--primary btn--sm" data-like-back="${p.id}">Like back</button></div>`;
+      row.querySelector("[data-like-back]").addEventListener("click", e=>{ e.stopPropagation(); likeBack(p.id); });
+      row.addEventListener("click", ()=> openProfileDetail(p, "like"));
       likesList.appendChild(row);
     });
 
     const matchesList = $("#activityMatchesList");
-    matchesList.innerHTML = state.matches.length
-      ? state.matches.map(p=>`<div class="like-row">${avatarHtml(p)}<div><strong>${p.name}</strong><p class="last-msg">Matched</p></div></div>`).join("")
-      : `<p class="muted-sm">No matches yet.</p>`;
+    matchesList.innerHTML = "";
+    if(state.matches.length === 0) matchesList.innerHTML = `<p class="muted-sm">No matches yet.</p>`;
+    sortProfiles(state.matches, $("#matchesSort")?.value || "proximity").forEach(p=>{
+      const row = document.createElement("div");
+      row.className = "like-row";
+      row.innerHTML = `${avatarHtml(p)}<div><strong>${p.name}</strong><p class="last-msg">${lastSeenLabel(p)}</p></div>`;
+      row.addEventListener("click", ()=> openProfileDetail(p, "match"));
+      matchesList.appendChild(row);
+    });
 
+    renderCallRequests();
     const callList = $("#callHistoryList");
     callList.innerHTML = state.callHistory.length
       ? state.callHistory.map(c=>`
@@ -997,16 +1186,17 @@
       : `<p class="muted-sm">No calls yet — matched users can call from any chat.</p>`;
   }
 
-  $("#likesList").addEventListener("click", (e)=>{
-    const btn = e.target.closest("[data-like-back]");
-    if(!btn) return;
-    const id = Number(btn.dataset.likeBack);
+  function likeBack(id){
     const liked = state.likesReceived.find(p=>p.id===id);
     if(!liked) return;
     state.likesReceived = state.likesReceived.filter(p=>p.id!==id);
-    createMatch({ ...liked, reasons:["Long term"], bio:"", interests:[] });
+    createMatch(liked.reasons ? liked : { ...liked, reasons:["Long term"], bio:"", interests:[] });
     renderActivity();
-  });
+  }
+
+  $("#likesSort").addEventListener("change", renderActivity);
+  $("#matchesSort").addEventListener("change", renderActivity);
+  $("#mainMatchesSort").addEventListener("change", renderMatches);
 
   /* ---------------- Settings ---------------- */
   const USERNAME_KEY = "merj_username_last_changed";
@@ -1030,6 +1220,10 @@
 
     $$('.choice-card[data-vismode]').forEach(c=> c.classList.toggle("is-selected", c.dataset.vismode === state.visibility));
     $("#pauseToggle").checked = state.paused;
+    $("#onlineStatusToggle").checked = state.showOnlineStatus;
+
+    $$('.choice-card[data-callperm]').forEach(c=> c.classList.toggle("is-selected", c.dataset.callperm === state.callPermission));
+    renderApprovedCallersList();
 
     const grid = $("#notifGrid");
     const rows = [["match","New matches"],["message","New messages"],["like","New likes"],["call","Calls"]];
@@ -1060,6 +1254,41 @@
     });
   });
 
+  $("#onlineStatusToggle").addEventListener("change", (e)=>{
+    state.showOnlineStatus = e.target.checked;
+    toast(state.showOnlineStatus ? "Your online status is visible to others." : "Your online status is now hidden.");
+  });
+
+  $$('.choice-card[data-callperm]').forEach(card=>{
+    card.addEventListener("click", ()=>{
+      $$('.choice-card[data-callperm]').forEach(c=>c.classList.remove("is-selected"));
+      card.classList.add("is-selected");
+      state.callPermission = card.dataset.callperm;
+      toast(`Calls: ${card.querySelector("strong").textContent} selected.`);
+    });
+  });
+
+  function renderApprovedCallersList(){
+    $("#approvedCallersBox").hidden = state.callPermission === "everyone";
+    const box = $("#approvedCallersList");
+    if(state.matches.length === 0){
+      box.innerHTML = `<p class="muted-sm">No matches yet to approve.</p>`;
+      return;
+    }
+    box.innerHTML = state.matches.map(m => `
+      <label class="toggle-row">
+        <span>${m.name}</span>
+        <input type="checkbox" data-approved-caller="${m.name}" ${state.approvedCallers.has(m.name) ? "checked" : ""}>
+        <span class="toggle-switch"></span>
+      </label>`).join("");
+  }
+  $("#approvedCallersList").addEventListener("change", (e)=>{
+    const name = e.target.dataset.approvedCaller;
+    if(!name) return;
+    if(e.target.checked) state.approvedCallers.add(name);
+    else state.approvedCallers.delete(name);
+  });
+
   $("#pauseToggle").addEventListener("change", (e)=>{
     state.paused = e.target.checked;
     toast(state.paused ? "Account paused — you're hidden and won't see new profiles." : "Welcome back — Discover is active again.");
@@ -1084,6 +1313,215 @@
     e.target.textContent = "Delete account";
     showScreen("landing");
   });
+
+  /* ---------------- Profile detail screen ---------------- */
+  function openProfileDetail(profile, context){
+    state.detailProfile = profile;
+    state.detailContext = context;
+    state.detailPhotoIndex = 0;
+    renderProfileDetail();
+    showScreen("profileDetail");
+  }
+
+  function renderProfileDetail(){
+    const p = state.detailProfile;
+    if(!p) return;
+    const photos = p.photos && p.photos.length ? p.photos : (p.photoUri ? [p.photoUri] : []);
+    $("#detailPhotoImg").src = photos[state.detailPhotoIndex] || "";
+    $("#detailPhotoDots").innerHTML = photos.length > 1
+      ? photos.map((_,i)=>`<span class="${i===state.detailPhotoIndex ? "is-active" : ""}"></span>`).join("")
+      : "";
+    $("#detailName").textContent = `${p.name}, ${p.age}`;
+    const statusText = typeof p.lastActiveMins === "number" ? ` · ${lastSeenLabel(p)}` : "";
+    $("#detailMeta").textContent = `${p.distance} km away${statusText}`;
+    $("#detailTags").innerHTML = (p.reasons || []).map(r => `<span class="tag">${r}</span>`).join("");
+    $("#detailBio").textContent = p.bio || "";
+    $("#detailVerifiedRow").innerHTML = p.verified ? `<div class="card-verified">✓ Phone verified</div>` : "";
+
+    const msgBtn = $("#detailMessageBtn");
+    const unmatchBtn = $("#detailUnmatchBtn");
+    if(state.detailContext === "match"){
+      msgBtn.textContent = "Message";
+      unmatchBtn.hidden = false;
+    } else if(state.detailContext === "like"){
+      msgBtn.textContent = "Like back";
+      unmatchBtn.hidden = true;
+    } else {
+      msgBtn.textContent = "Like";
+      unmatchBtn.hidden = true;
+    }
+  }
+
+  $("#detailBackBtn").addEventListener("click", ()=>{
+    const back = state.detailContext === "deck" ? "discover" : (state.detailContext === "like" ? "activity" : "matches");
+    showScreen(back);
+  });
+  $("#detailPrevZone").addEventListener("click", ()=> stepDetailPhoto(-1));
+  $("#detailNextZone").addEventListener("click", ()=> stepDetailPhoto(1));
+  function stepDetailPhoto(dir){
+    const p = state.detailProfile;
+    const photos = p.photos && p.photos.length ? p.photos : [p.photoUri];
+    state.detailPhotoIndex = (state.detailPhotoIndex + dir + photos.length) % photos.length;
+    renderProfileDetail();
+  }
+  $("#detailUnmatchBtn").addEventListener("click", ()=>{
+    unmatchProfile(state.detailProfile.id);
+    showScreen("matches");
+  });
+  $("#detailMessageBtn").addEventListener("click", ()=>{
+    const p = state.detailProfile;
+    if(state.detailContext === "match") openChat(p.id);
+    else if(state.detailContext === "like") { likeBack(p.id); showScreen("discover"); openChat(p.id); }
+    else {
+      const top = $(".swipe-card:last-child");
+      if(state.deck[state.deckIndex] && state.deck[state.deckIndex].id === p.id) resolveSwipe(p, "like", top);
+      showScreen("discover");
+    }
+  });
+
+  /* ---------------- Call permissions & request log ---------------- */
+  function shouldAcceptCall(callerName){
+    if(state.approvedCallers.has(callerName)) return true;
+    return state.callPermission === "everyone";
+  }
+
+  function logBlockedCall(name, kind, code){
+    state.callRequestLog.unshift({ name, kind, code, at: new Date() });
+    toast(`Missed ${kind} call from ${name} — blocked by your call settings.`);
+    if(state.screen === "activity") renderActivity();
+  }
+
+  function renderCallRequests(){
+    const box = $("#callRequestsList");
+    if(state.callRequestLog.length === 0){
+      box.innerHTML = `<p class="muted-sm">No blocked call attempts.</p>`;
+      return;
+    }
+    box.innerHTML = "";
+    state.callRequestLog.forEach(entry=>{
+      const row = document.createElement("div");
+      row.className = "call-req-row";
+      row.innerHTML = `<span class="call-kind">${entry.kind === "video" ? "🎥" : "📞"}</span>
+        <div><strong>${entry.name}</strong><p class="last-msg">${entry.at.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</p></div>
+        <div class="call-req-actions">
+          <button class="btn btn--ghost btn--sm" data-callback>Call back</button>
+          <button class="btn btn--ghost btn--sm" data-msgback>Message</button>
+          <button class="btn btn--ghost btn--sm" data-approve>Approve</button>
+        </div>`;
+      row.querySelector("[data-callback]").addEventListener("click", ()=> joinRoom(entry.code));
+      row.querySelector("[data-msgback]").addEventListener("click", ()=> messageFromLog(entry));
+      row.querySelector("[data-approve]").addEventListener("click", ()=>{
+        state.approvedCallers.add(entry.name);
+        toast(`${entry.name} can now call you.`);
+        renderCallRequests();
+        renderApprovedCallersList();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function messageFromLog(entry){
+    const pseudoId = "peer-" + entry.code;
+    if(!state.chats[pseudoId]) state.chats[pseudoId] = [];
+    if(!state.matches.find(m=>m.id===pseudoId)){
+      state.matches.unshift({ id: pseudoId, name: entry.name, initial: (entry.name[0]||"?").toUpperCase(), distance:0, reasons:[], bio:"" });
+    }
+    openChat(pseudoId);
+  }
+
+  /* ---------------- Post-call re-verification ---------------- */
+  function maybeShowVerifyPrompt(){
+    if(!state.rtc.connected || !state.rtc.activeCallProfileId || !state.rtc.wasVideo) return;
+    $("#verifyPromptText").textContent = `Did ${state.rtc.activeCallProfileName || "the person you called"} match their profile pictures?`;
+    $("#verifyPromptOverlay").hidden = false;
+  }
+  $("#verifyYesBtn").addEventListener("click", ()=>{
+    const profile = PROFILES.find(p=>p.id === state.rtc.activeCallProfileId);
+    if(profile){ profile.videoVerified = true; profile.videoMismatchReported = false; }
+    toast("Marked as video-verified. Thanks — this helps keep Merj honest.");
+    $("#verifyPromptOverlay").hidden = true;
+    state.rtc.activeCallProfileId = null;
+  });
+  $("#verifyNoBtn").addEventListener("click", ()=>{
+    const profile = PROFILES.find(p=>p.id === state.rtc.activeCallProfileId);
+    if(profile){ profile.videoMismatchReported = true; profile.videoVerified = false; }
+    toast("Thanks for flagging that — sent for review.");
+    $("#verifyPromptOverlay").hidden = true;
+    state.rtc.activeCallProfileId = null;
+  });
+
+  /* ---------------- Photo management (account) ---------------- */
+  function renderProfilePhotoGrid(){
+    const grid = $("#profilePhotoGrid");
+    grid.innerHTML = "";
+    state.ob.photos.forEach((p,i)=>{
+      const slot = document.createElement("div");
+      slot.className = "photo-slot photo-manage-slot" + (p ? " has-photo" : "");
+      slot.draggable = !!p;
+      slot.dataset.index = String(i);
+      slot.innerHTML = p
+        ? `<img src="${p}" alt="Photo ${i+1}"><button class="photo-remove" data-remove="${i}" aria-label="Remove photo">✕</button><span class="photo-order">${i+1}</span>`
+        : `<label style="display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;height:100%;justify-content:center;cursor:pointer;"><span>📷<br>Add</span><input type="file" accept="image/*" data-addidx="${i}" style="position:absolute;inset:0;opacity:0;cursor:pointer;"></label>`;
+      grid.appendChild(slot);
+    });
+    if(state.ob.photos.length < 6){
+      const addSlot = document.createElement("label");
+      addSlot.className = "photo-slot";
+      addSlot.innerHTML = `<span>+ Add photo</span><input type="file" accept="image/*" id="addPhotoInput" style="position:absolute;inset:0;opacity:0;cursor:pointer;">`;
+      grid.appendChild(addSlot);
+    }
+    wirePhotoManageDrag();
+  }
+
+  $("#profilePhotoGrid").addEventListener("change", (e)=>{
+    const input = e.target;
+    if(input.tagName !== "INPUT" || input.type !== "file" || !input.files[0]) return;
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      if(input.id === "addPhotoInput"){
+        state.ob.photos.push(reader.result);
+      } else {
+        const idx = Number(input.dataset.addidx);
+        state.ob.photos[idx] = reader.result;
+      }
+      if(state.ob.username === "You" || !state.ob.photoUri) state.ob.photoUri = state.ob.photos.find(Boolean);
+      renderProfilePhotoGrid();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  $("#profilePhotoGrid").addEventListener("click", (e)=>{
+    const removeBtn = e.target.closest("[data-remove]");
+    if(!removeBtn) return;
+    const idx = Number(removeBtn.dataset.remove);
+    if(state.ob.photos.filter(Boolean).length <= 3){
+      toast("You need at least 3 photos — add a replacement before removing this one.");
+      return;
+    }
+    state.ob.photos.splice(idx, 1);
+    renderProfilePhotoGrid();
+  });
+
+  let dragPhotoIdx = null;
+  function wirePhotoManageDrag(){
+    const slots = $$(".photo-manage-slot", $("#profilePhotoGrid"));
+    slots.forEach(slot=>{
+      slot.addEventListener("dragstart", ()=>{ dragPhotoIdx = Number(slot.dataset.index); slot.classList.add("dragging"); });
+      slot.addEventListener("dragend", ()=> slot.classList.remove("dragging"));
+      slot.addEventListener("dragover", (e)=> e.preventDefault());
+      slot.addEventListener("drop", (e)=>{
+        e.preventDefault();
+        const targetIdx = Number(slot.dataset.index);
+        if(dragPhotoIdx === null || dragPhotoIdx === targetIdx) return;
+        const arr = state.ob.photos;
+        const [moved] = arr.splice(dragPhotoIdx, 1);
+        arr.splice(targetIdx, 0, moved);
+        dragPhotoIdx = null;
+        renderProfilePhotoGrid();
+      });
+    });
+  }
 
   /* ---------------- Init ---------------- */
   buildPhotoGrid();
