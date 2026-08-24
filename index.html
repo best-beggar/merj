@@ -6,7 +6,7 @@
 <title>Merj — Swipe. Match. Mean it.</title>
 <meta name="description" content="Merj is a free dating platform built around honest matching, real safety controls, and zero paywalls.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff3b6e'/%3E%3Cstop offset='0.55' stop-color='%23ff7a3d'/%3E%3Cstop offset='1' stop-color='%239b5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M16 25.8l-1.9-1.76C7.2 18.2 3 14.4 3 9.9 3 6.2 5.9 3.3 9.6 3.3c2.1 0 4.1 1 5.4 2.5 1.3-1.5 3.3-2.5 5.4-2.5 3.7 0 6.6 2.9 6.6 6.6 0 4.5-4.2 8.3-11.1 14.1L16 25.8z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=7">
+<link rel="stylesheet" href="css/styles.css?v=8">
 </head>
 <body>
 
@@ -423,6 +423,8 @@
         <div class="badge-row" id="myBadges"></div>
       </div>
 
+      <button class="btn btn--outline btn--block" id="adminEntryLink" data-nav="admin" hidden>🛡️ Admin panel</button>
+
       <div class="panel-section">
         <h4>Verification</h4>
         <div class="verify-row">
@@ -484,6 +486,78 @@
       <button class="nav-btn is-active" data-nav="profile"><span>👤</span>Profile</button>
       <button class="nav-btn" data-nav="safety"><span>🛡️</span>Safety</button>
     </nav>
+  </section>
+
+  <!-- ---------- ADMIN ---------- -->
+  <section class="screen" data-screen="admin">
+    <header class="app-header">
+      <button class="icon-btn" data-nav="profile" aria-label="Back">←</button>
+      <div class="app-header-title">Admin</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="activity-tabs" id="adminTabs">
+        <button class="activity-tab is-active" data-admintab="accounts">Accounts</button>
+        <button class="activity-tab" data-admintab="reports">Reports</button>
+        <button class="activity-tab" data-admintab="photos">Photos</button>
+        <button class="activity-tab" data-admintab="analytics">Analytics</button>
+        <button class="activity-tab" data-admintab="ads">Ads</button>
+        <button class="activity-tab" data-admintab="affiliates">Affiliates</button>
+      </div>
+
+      <!-- Accounts -->
+      <div class="admin-pane is-active" data-apane2="accounts">
+        <label class="field">Search by username
+          <input type="text" id="adminAccountSearch" placeholder="Type to filter…">
+        </label>
+        <div class="admin-table-wrap"><table class="admin-table" id="adminAccountsTable">
+          <thead><tr><th>User</th><th>Age</th><th>Trust</th><th>Status</th><th>Joined</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <!-- Reports -->
+      <div class="admin-pane" data-apane2="reports">
+        <div id="adminReportsList"></div>
+      </div>
+
+      <!-- Photo verification -->
+      <div class="admin-pane" data-apane2="photos">
+        <p class="muted-sm">Accounts whose photos are pending manual review.</p>
+        <div id="adminPhotosList"></div>
+      </div>
+
+      <!-- Analytics -->
+      <div class="admin-pane" data-apane2="analytics">
+        <div class="stat-grid" id="adminStatGrid"></div>
+      </div>
+
+      <!-- Ads -->
+      <div class="admin-pane" data-apane2="ads">
+        <div class="stat-grid" id="adminAdStatGrid"></div>
+        <div class="panel-section">
+          <h4>By placement</h4>
+          <div id="adminAdBreakdown"></div>
+        </div>
+      </div>
+
+      <!-- Affiliates -->
+      <div class="admin-pane" data-apane2="affiliates">
+        <div class="panel-section">
+          <h4>Add affiliate code</h4>
+          <label class="field">Name
+            <input type="text" id="adminAffName" placeholder="e.g. Dublin Nights Blog">
+          </label>
+          <label class="field">Code
+            <input type="text" id="adminAffCode" placeholder="e.g. DUBLIN10">
+          </label>
+          <button class="btn btn--primary btn--block" id="adminAddAffiliateBtn">Add</button>
+        </div>
+        <div class="admin-table-wrap"><table class="admin-table" id="adminAffiliatesTable">
+          <thead><tr><th>Name</th><th>Code</th><th>Signups</th><th>Share</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
   </section>
 
   <!-- ---------- SETTINGS ---------- -->
@@ -791,6 +865,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=13"></script>
+<script src="js/app.js?v=14"></script>
 </body>
 </html>

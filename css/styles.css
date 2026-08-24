@@ -416,6 +416,27 @@ input[type=range]{ width:100%; accent-color: var(--primary); }
 .call-room-box .field{ margin-bottom: 10px; }
 .call-controls{ display:flex; justify-content:center; gap:16px; margin: 10px 0; }
 
+/* ---------- Admin panel ---------- */
+.admin-pane{ display:none; }
+.admin-pane.is-active{ display:block; }
+.admin-table-wrap{ overflow-x:auto; border-radius: var(--radius-sm); border:1px solid var(--border); }
+.admin-table{ width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }
+.admin-table th{ text-align:left; background: var(--surface-2); color: var(--muted); padding:8px 10px; font-weight:600; position:sticky; top:0; }
+.admin-table td{ padding:8px 10px; border-top:1px solid var(--border); }
+.admin-table tr:hover td{ background: var(--surface-2); }
+.admin-table .btn{ padding:5px 10px; font-size:11px; }
+.stat-grid{ display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; margin-bottom:14px; }
+.stat-tile{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); padding:14px; text-align:center; }
+.stat-tile .stat-num{ font-size:24px; font-weight:800; background: var(--gradient); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.stat-tile .stat-label{ font-size:11px; color: var(--muted-2); margin-top:2px; }
+.admin-report-row, .admin-photo-row{
+  background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); padding:12px; margin-bottom:10px;
+}
+.admin-photo-row .admin-photo-strip{ display:flex; gap:6px; margin:8px 0; overflow-x:auto; }
+.admin-photo-row .admin-photo-strip img{ width:70px; height:90px; object-fit:cover; border-radius:8px; }
+.admin-report-row .admin-row-actions, .admin-photo-row .admin-row-actions{ display:flex; gap:8px; margin-top:8px; }
+.admin-row-actions .btn{ flex:1; padding:7px; font-size:11.5px; }
+
 /* ---------- Profile detail ---------- */
 .detail-photo-stage{ position:relative; aspect-ratio: 3/4; border-radius: var(--radius-lg); overflow:hidden; margin-bottom:14px; }
 .detail-photo-stage img{ width:100%; height:100%; object-fit:cover; }

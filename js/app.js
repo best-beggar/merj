@@ -162,6 +162,7 @@
     guestSwipeCount: 0,
     guestGateTriggered: false,
     realUserId: null,
+    isAdmin: false,
     swipesUsed: 0,
     swipesLimit: 200,
     deckIndex: 0,
@@ -259,6 +260,10 @@
     if(name === "settings") renderSettings();
     if(name === "activity") renderActivity();
     if(name === "safety") renderSafetyScreen();
+    if(name === "admin"){
+      if(!state.isAdmin){ toast("Admin access only."); showScreen("profile"); return; }
+      renderAdminAccounts();
+    }
   }
 
   document.addEventListener("click", (e)=>{
@@ -619,6 +624,7 @@
         city: $("#obCity").value.trim() || null,
         phone_verified: false,
         email_verified: true,
+        referred_by: getStoredReferralCode(),
       });
     }).then(({ error })=>{
       if(error){
@@ -667,6 +673,43 @@
       state.deck = buildDiscoverDeck();
       if(state.screen === "discover") renderDeck();
     }).catch(()=>{ /* backend unreachable — Discover just stays mock-only */ });
+  }
+
+  // Affiliate referral capture: ?ref=CODE on any landing visit is remembered locally and
+  // attributed to the profile row at signup. No self-serve affiliate portal/API yet — an
+  // admin creates codes manually for now; this is the core tracking mechanism only.
+  const REFERRAL_KEY = "merj_referral_code";
+  function captureReferralCode(){
+    const ref = new URLSearchParams(location.search).get("ref");
+    if(ref) try{ localStorage.setItem(REFERRAL_KEY, ref); }catch(e){}
+  }
+  function getStoredReferralCode(){
+    try{ return localStorage.getItem(REFERRAL_KEY); }catch(e){ return null; }
+  }
+
+  // Supabase persists auth sessions in localStorage by default, so a real account stays logged
+  // in across reloads at the Supabase layer -- this just rehydrates the app's own state (profile
+  // fields, admin flag) to match, so a reload doesn't drop back to a blank guest-looking screen.
+  function restoreRealSessionIfAny(){
+    if(!sb) return;
+    sb.auth.getSession().then(({ data })=>{
+      const session = data && data.session;
+      if(!session) return;
+      state.realUserId = session.user.id;
+      sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
+        if(error || !profile) return;
+        state.ob.username = profile.username;
+        state.ob.bio = profile.bio;
+        state.ob.reasons = profile.reasons || [];
+        state.ob.photos = (profile.photos && profile.photos.length) ? profile.photos : [null,null,null];
+        state.ob.photoUri = profile.photos && profile.photos[0];
+        state.ob.loc = profile.location_mode || "live";
+        state.idVerified = !!profile.id_verified;
+        state.ageVerified = !!profile.age_verified;
+        state.isAdmin = !!profile.is_admin;
+        $("#adminEntryLink").hidden = !state.isAdmin;
+      }).catch(()=>{});
+    }).catch(()=>{});
   }
 
   /* ---------------- Demo stakeholder logins ----------------
@@ -903,9 +946,16 @@
   // rewarded ads for the eventual native app) and call grantAdReward() from its "reward earned"
   // callback instead of the timer. Signing up for/getting approved by an ad network is an account
   // step only you can do — this just leaves the exact spot to plug it in.
+  function logAdImpression(context){
+    if(!sb) return;
+    sb.from("ad_impressions").insert({ user_id: state.realUserId, context }).then(()=>{}).catch(()=>{});
+  }
+
   let pendingAdReward = null;
-  function playRewardedAd(claimLabel, onComplete){
+  let pendingAdContext = null;
+  function playRewardedAd(claimLabel, onComplete, context){
     pendingAdReward = onComplete;
+    pendingAdContext = context || "unknown";
     $("#adOverlay").hidden = false;
     $("#adCloseBtn").disabled = true;
     $("#adCopy").textContent = "Playing a short ad…";
@@ -929,9 +979,10 @@
     state.swipesLimit += 10;
     toast("+10 swipes unlocked!");
     renderDeck();
-  }));
+  }, "swipe_refill"));
   $("#adCloseBtn").addEventListener("click", ()=>{
     if($("#adCloseBtn").disabled) return;
+    logAdImpression(pendingAdContext);
     $("#adOverlay").hidden = true;
     if(pendingAdReward) pendingAdReward();
     pendingAdReward = null;
@@ -1218,7 +1269,7 @@
       $("#blindUnlockFiltersBtn").hidden = true;
       $("#blindFilterControls").hidden = false;
       toast("Filters unlocked for this session.");
-    });
+    }, "blind_date_filters");
   });
 
   function resetBlindDateUI(){
@@ -1985,6 +2036,215 @@
     });
   }
 
+  /* ---------------- Admin panel ----------------
+     Everything here reads/writes real tables through RLS -- an admin's queries succeed because
+     is_admin(auth.uid()) is true, not because the UI hid a button from anyone else. Every
+     mutating action logs to admin_audit_log, which is the actual accountability mechanism:
+     "did staff abuse their access" is answered by that table, not by a policy document. */
+  function logAdminAction(action, targetId, details){
+    if(!sb) return;
+    sb.from("admin_audit_log").insert({ admin_id: state.realUserId, action, target_id: targetId || null, details: details || {} })
+      .then(()=>{}).catch(()=>{});
+  }
+
+  $("#adminTabs").addEventListener("click", (e)=>{
+    const tab = e.target.closest(".activity-tab");
+    if(!tab) return;
+    $$(".activity-tab", $("#adminTabs")).forEach(t=>t.classList.toggle("is-active", t===tab));
+    const name = tab.dataset.admintab;
+    $$(".admin-pane").forEach(p=>p.classList.toggle("is-active", p.dataset.apane2===name));
+    if(name === "accounts") renderAdminAccounts();
+    if(name === "reports") renderAdminReports();
+    if(name === "photos") renderAdminPhotos();
+    if(name === "analytics") renderAdminAnalytics();
+    if(name === "ads") renderAdminAds();
+    if(name === "affiliates") renderAdminAffiliates();
+  });
+
+  let adminAccountsCache = [];
+  function renderAdminAccounts(){
+    if(!sb) return;
+    sb.from("profiles").select("*").order("created_at", { ascending:false }).then(({ data, error })=>{
+      if(error || !data) return;
+      adminAccountsCache = data;
+      drawAdminAccountsTable(data);
+    });
+  }
+  function drawAdminAccountsTable(rows){
+    const tbody = $("#adminAccountsTable tbody");
+    tbody.innerHTML = rows.map(p => `
+      <tr>
+        <td>${p.username}${p.is_demo_seed ? " <span class='badge'>seed</span>" : ""}</td>
+        <td>${p.age || "—"}</td>
+        <td>${p.trust_score || 0}</td>
+        <td>${p.is_banned ? "🚫 Banned" : (p.is_paused ? "⏸ Paused" : "✓ Active")}</td>
+        <td>${new Date(p.created_at).toLocaleDateString()}</td>
+        <td><button class="btn btn--${p.is_banned ? "outline" : "danger-ghost"}" data-toggle-ban="${p.id}" data-banned="${p.is_banned}">${p.is_banned ? "Unban" : "Ban"}</button></td>
+      </tr>`).join("") || `<tr><td colspan="6">No accounts yet.</td></tr>`;
+  }
+  $("#adminAccountSearch").addEventListener("input", (e)=>{
+    const q = e.target.value.trim().toLowerCase();
+    drawAdminAccountsTable(adminAccountsCache.filter(p => p.username.toLowerCase().includes(q)));
+  });
+  $("#adminAccountsTable").addEventListener("click", (e)=>{
+    const btn = e.target.closest("[data-toggle-ban]");
+    if(!btn) return;
+    const id = btn.dataset.toggleBan;
+    const wasBanned = btn.dataset.banned === "true";
+    sb.from("profiles").update({ is_banned: !wasBanned }).eq("id", id).then(({ error })=>{
+      if(error){ toast("Action failed — check you're still signed in as an admin."); return; }
+      logAdminAction(wasBanned ? "unban_account" : "ban_account", id, {});
+      toast(wasBanned ? "Account unbanned." : "Account banned.");
+      renderAdminAccounts();
+    });
+  });
+
+  function renderAdminReports(){
+    if(!sb) return;
+    Promise.all([
+      sb.from("reports").select("*").order("created_at", { ascending:false }),
+      sb.from("profiles").select("id, username"),
+    ]).then(([reportsRes, profilesRes])=>{
+      if(reportsRes.error || !reportsRes.data) return;
+      const nameOf = id => (profilesRes.data || []).find(p=>p.id===id)?.username || id?.slice(0,8) || "unknown";
+      const list = $("#adminReportsList");
+      list.innerHTML = reportsRes.data.map(r => `
+        <div class="admin-report-row">
+          <strong>${nameOf(r.target)}</strong> reported by <strong>${nameOf(r.reporter)}</strong>
+          <p class="muted-sm">${r.reason} · ${new Date(r.created_at).toLocaleString()} · status: ${r.status}</p>
+          <div class="admin-row-actions">
+            <button class="btn btn--ghost" data-report-reviewed="${r.id}" ${r.status!=="open"?"disabled":""}>Mark reviewed</button>
+            <button class="btn btn--danger" data-report-ban="${r.target}" data-report-id="${r.id}">Ban reported user</button>
+          </div>
+        </div>`).join("") || `<p class="muted-sm">No reports.</p>`;
+    });
+  }
+  $("#adminReportsList").addEventListener("click", (e)=>{
+    const reviewBtn = e.target.closest("[data-report-reviewed]");
+    if(reviewBtn){
+      const id = reviewBtn.dataset.reportReviewed;
+      sb.from("reports").update({ status:"reviewed" }).eq("id", id).then(()=>{
+        logAdminAction("report_reviewed", id, {});
+        toast("Report marked reviewed.");
+        renderAdminReports();
+      });
+      return;
+    }
+    const banBtn = e.target.closest("[data-report-ban]");
+    if(banBtn){
+      const targetId = banBtn.dataset.reportBan;
+      const reportId = banBtn.dataset.reportId;
+      sb.from("profiles").update({ is_banned: true, ban_reason: "Actioned from a user report" }).eq("id", targetId).then(()=>{
+        sb.from("reports").update({ status:"actioned" }).eq("id", reportId).then(()=>{});
+        logAdminAction("ban_from_report", targetId, { reportId });
+        toast("User banned.");
+        renderAdminReports();
+      });
+    }
+  });
+
+  function renderAdminPhotos(){
+    if(!sb) return;
+    sb.from("profiles").select("id, username, photos, photo_review_status").eq("photo_review_status", "pending").then(({ data, error })=>{
+      if(error || !data) return;
+      const list = $("#adminPhotosList");
+      list.innerHTML = data.filter(p => p.photos && p.photos.length).map(p => `
+        <div class="admin-photo-row">
+          <strong>${p.username}</strong>
+          <div class="admin-photo-strip">${p.photos.map(url => `<img src="${url}" alt="">`).join("")}</div>
+          <div class="admin-row-actions">
+            <button class="btn btn--outline" data-photo-reject="${p.id}">Reject</button>
+            <button class="btn btn--primary" data-photo-approve="${p.id}">Approve</button>
+          </div>
+        </div>`).join("") || `<p class="muted-sm">Nothing pending review.</p>`;
+    });
+  }
+  $("#adminPhotosList").addEventListener("click", (e)=>{
+    const approveBtn = e.target.closest("[data-photo-approve]");
+    const rejectBtn = e.target.closest("[data-photo-reject]");
+    const id = approveBtn?.dataset.photoApprove || rejectBtn?.dataset.photoReject;
+    if(!id) return;
+    const status = approveBtn ? "approved" : "rejected";
+    sb.from("profiles").update({ photo_review_status: status }).eq("id", id).then(()=>{
+      logAdminAction("photo_" + status, id, {});
+      toast(`Photos ${status}.`);
+      renderAdminPhotos();
+    });
+  });
+
+  function renderAdminAnalytics(){
+    if(!sb) return;
+    sb.from("profiles").select("created_at, last_active_at, is_banned, phone_verified, is_demo_seed").then(({ data, error })=>{
+      if(error || !data) return;
+      const now = Date.now();
+      const dayMs = 24*60*60*1000;
+      const real = data.filter(p => !p.is_demo_seed);
+      const onlineNow = data.filter(p => p.last_active_at && (now - new Date(p.last_active_at).getTime()) <= 10*60*1000).length;
+      const activeToday = data.filter(p => p.last_active_at && (now - new Date(p.last_active_at).getTime()) <= dayMs).length;
+      const lapsed = data.filter(p => p.last_active_at && (now - new Date(p.last_active_at).getTime()) > 14*dayMs).length;
+      const signupsToday = real.filter(p => (now - new Date(p.created_at).getTime()) <= dayMs).length;
+      const verifiedPct = real.length ? Math.round(100 * real.filter(p=>p.phone_verified||p.email_verified).length / real.length) : 0;
+      const tiles = [
+        ["Total accounts", data.length],
+        ["Real signups", real.length],
+        ["Online now", onlineNow],
+        ["Active today", activeToday],
+        ["Lapsed (14d+)", lapsed],
+        ["Signups today", signupsToday],
+        ["Verified %", verifiedPct + "%"],
+        ["Banned", data.filter(p=>p.is_banned).length],
+      ];
+      $("#adminStatGrid").innerHTML = tiles.map(([label, num]) => `<div class="stat-tile"><div class="stat-num">${num}</div><div class="stat-label">${label}</div></div>`).join("");
+    });
+  }
+
+  function renderAdminAds(){
+    if(!sb) return;
+    sb.from("ad_impressions").select("context, estimated_revenue, created_at").then(({ data, error })=>{
+      if(error || !data) return;
+      const totalRevenue = data.reduce((s,r)=>s + Number(r.estimated_revenue||0), 0);
+      const today = data.filter(r => (Date.now() - new Date(r.created_at).getTime()) <= 24*60*60*1000).length;
+      $("#adminAdStatGrid").innerHTML = [
+        ["Total impressions", data.length],
+        ["Impressions today", today],
+        ["Est. revenue", "$" + totalRevenue.toFixed(2)],
+        ["Avg. per impression", "$" + (data.length ? (totalRevenue/data.length).toFixed(4) : "0.0000")],
+      ].map(([label,num]) => `<div class="stat-tile"><div class="stat-num">${num}</div><div class="stat-label">${label}</div></div>`).join("");
+      const byContext = {};
+      data.forEach(r => { byContext[r.context] = (byContext[r.context]||0) + 1; });
+      $("#adminAdBreakdown").innerHTML = Object.entries(byContext).map(([ctx,count]) =>
+        `<div class="like-row"><div><strong>${ctx}</strong><p class="last-msg">${count} impressions</p></div></div>`
+      ).join("") || `<p class="muted-sm">No ad activity yet.</p>`;
+    });
+  }
+
+  function renderAdminAffiliates(){
+    if(!sb) return;
+    Promise.all([
+      sb.from("affiliates").select("*").order("created_at", { ascending:false }),
+      sb.from("profiles").select("referred_by"),
+    ]).then(([affRes, profRes])=>{
+      if(affRes.error || !affRes.data) return;
+      const counts = {};
+      (profRes.data || []).forEach(p => { if(p.referred_by) counts[p.referred_by] = (counts[p.referred_by]||0) + 1; });
+      $("#adminAffiliatesTable tbody").innerHTML = affRes.data.map(a => `
+        <tr><td>${a.name}</td><td>${a.code}</td><td>${counts[a.code] || 0}</td><td>${a.revenue_share_percent}%</td></tr>
+      `).join("") || `<tr><td colspan="4">No affiliates yet.</td></tr>`;
+    });
+  }
+  $("#adminAddAffiliateBtn").addEventListener("click", ()=>{
+    const name = $("#adminAffName").value.trim();
+    const code = $("#adminAffCode").value.trim().toUpperCase();
+    if(!name || !code){ toast("Enter both a name and a code."); return; }
+    sb.from("affiliates").insert({ name, code }).then(({ error })=>{
+      if(error){ toast("Couldn't add — that code might already exist."); return; }
+      logAdminAction("affiliate_added", null, { code, name });
+      toast(`Affiliate "${name}" added.`);
+      $("#adminAffName").value = ""; $("#adminAffCode").value = "";
+      renderAdminAffiliates();
+    });
+  });
+
   /* ---------------- Init ---------------- */
   buildPhotoGrid();
   $("#photoGrid").addEventListener("change", onPhotoSelected);
@@ -1993,4 +2253,6 @@
   updateFilterSummary();
   restoreOnboardingDraftIfAny();
   loadRealProfiles();
+  restoreRealSessionIfAny();
+  captureReferralCode();
 })();
