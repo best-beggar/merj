@@ -331,26 +331,38 @@
     obSteps().forEach(s => s.classList.toggle("is-active", Number(s.dataset.step) === state.ob.step));
     $("#obProgress").style.width = Math.round((state.ob.step/state.ob.totalSteps)*100) + "%";
     $("#obBack").style.visibility = state.ob.step === 1 ? "hidden" : "visible";
-    $("#obNext").textContent = state.ob.step === state.ob.totalSteps ? "Verify & enter Merj" : "Continue";
+    if(state.ob.step === state.ob.totalSteps){
+      $("#obNext").textContent = state.ob.googleAuthed ? "Enter Merj" : "Verify & enter Merj";
+    } else {
+      $("#obNext").textContent = "Continue";
+    }
     if(state.ob.step === 6){
       $("#obEmailConfirm").textContent = $("#obEmail").value || "your address";
       if(state.ob.otpSentForEmail !== $("#obEmail").value) sendRealOtp();
     }
-    // Guests upgrading mid-swipe only need identity + verification (steps 1 & 6) to keep going —
-    // photos/reasons/extras can be skipped and finished later from the profile screen.
-    $("#obSkipRow").hidden = !(state.ob.guestUpgradeMode && state.ob.step > 1 && state.ob.step < 6);
+    // Guests upgrading mid-swipe, and Google sign-ins (already identity-verified), only need
+    // step 1's essentials (DOB is a legal 18+ gate Google can't hand us, gender/who-you're-into
+    // is required) -- photos/reasons/extras can be skipped and finished later from the profile.
+    const canSkip = state.ob.guestUpgradeMode || state.ob.googleAuthed;
+    $("#obSkipRow").hidden = !(canSkip && state.ob.step > 1 && state.ob.step < state.ob.totalSteps);
   }
   $("#obSkipBtn").addEventListener("click", ()=>{
-    state.ob.step = 6;
-    updateOnboardUI();
-    saveOnboardingDraft();
+    if(state.ob.googleAuthed){
+      completeOnboarding(state.realUserId);
+    } else {
+      state.ob.step = 6;
+      updateOnboardUI();
+      saveOnboardingDraft();
+    }
   });
 
   function validateStep(step){
     if(step === 1){
       if(!$("#obUsername").value.trim()) return "Pick a username.";
       if(!/^\S+@\S+\.\S+$/.test($("#obEmail").value)) return "Enter a valid email.";
-      if(!$("#obPhone").value.trim()) return "Phone number is required — it's how we verify you.";
+      // Google sign-ins are already identity-verified by Google -- phone becomes optional profile
+      // data rather than the verification mechanism, so it's not required to continue.
+      if(!state.ob.googleAuthed && !$("#obPhone").value.trim()) return "Phone number is required — it's how we verify you.";
       const dob = $("#obDob").value;
       if(!dob) return "Date of birth is required.";
       const age = ageFromDob(dob);
@@ -768,6 +780,7 @@
           $("#obEmail").value = session.user.email || "";
           $("#obEmail").disabled = true;
           $("#obUsername").value = meta.full_name || meta.name || "";
+          $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
           updateOnboardUI();
           showScreen("onboarding");
           toast("Signed in with Google — let's finish setting up your profile.");
