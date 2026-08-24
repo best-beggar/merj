@@ -156,7 +156,7 @@ img{ max-width: 100%; display:block; }
 .panel-section h4{ font-size: 14px; text-transform: uppercase; letter-spacing:.04em; color: var(--muted); margin-bottom: 8px; }
 
 /* ---------- Onboarding ---------- */
-.onboard-wrap{ padding: 20px; max-width: 480px; margin: 0 auto; width:100%; }
+.onboard-wrap{ padding: 20px; max-width: 480px; margin: 0 auto; width:100%; flex:1; overflow-y:auto; min-height:0; }
 .progress-bar{ height:4px; background: var(--border); border-radius:2px; margin-bottom: 22px; overflow:hidden; }
 .progress-fill{ height:100%; width: 16.6%; background: var(--gradient); transition: width .25s ease; }
 .ob-step{ display:none; }
@@ -215,7 +215,10 @@ img{ max-width: 100%; display:block; }
 .otp-row{ display:flex; gap:6px; margin: 16px 0; }
 .otp-box{ flex:1; min-width:0; height:56px; text-align:center; font-size:20px; border-radius: var(--radius-sm); border:1.5px solid var(--border); background: var(--surface); color: var(--text); }
 
-.ob-nav{ display:flex; gap:10px; margin-top: 20px; }
+.ob-nav{
+  display:flex; gap:10px; margin-top: 20px; padding: 12px 0 4px; position:sticky; bottom:0;
+  background: var(--bg); border-top: 1px solid var(--border);
+}
 .ob-nav .btn{ flex:1; }
 
 /* ---------- Discover filter summary + blind date banner ---------- */
@@ -506,6 +509,14 @@ input[type=range]{ width:100%; accent-color: var(--primary); }
   }
   .app-frame.is-open > .screen.is-active{ min-height: 780px; max-height: 86vh; }
   .onboard-wrap{ padding: 24px; }
+
+  /* Onboarding/login are forms, not the phone-app experience -- the phone-bezel mockup chrome
+     (thick black border, deep shadow) reads as "screenshot of a phone", not a real desktop
+     signup page. Drop it specifically for these two screens; the rest of the app keeps it. */
+  .app-frame.is-open:has(> [data-screen="onboarding"].is-active),
+  .app-frame.is-open:has(> [data-screen="login"].is-active){
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); max-width: 520px;
+  }
 }
 
 /* Tablets (>=768px) */
