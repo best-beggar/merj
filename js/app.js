@@ -690,6 +690,19 @@
   // Supabase persists auth sessions in localStorage by default, so a real account stays logged
   // in across reloads at the Supabase layer -- this just rehydrates the app's own state (profile
   // fields, admin flag) to match, so a reload doesn't drop back to a blank guest-looking screen.
+  function hydrateStateFromProfile(profile){
+    state.ob.username = profile.username;
+    state.ob.bio = profile.bio;
+    state.ob.reasons = profile.reasons || [];
+    state.ob.photos = (profile.photos && profile.photos.length) ? profile.photos : [null,null,null];
+    state.ob.photoUri = profile.photos && profile.photos[0];
+    state.ob.loc = profile.location_mode || "live";
+    state.idVerified = !!profile.id_verified;
+    state.ageVerified = !!profile.age_verified;
+    state.isAdmin = !!profile.is_admin;
+    $("#adminEntryLink").hidden = !state.isAdmin;
+  }
+
   function restoreRealSessionIfAny(){
     if(!sb) return;
     sb.auth.getSession().then(({ data })=>{
@@ -698,19 +711,58 @@
       state.realUserId = session.user.id;
       sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
         if(error || !profile) return;
-        state.ob.username = profile.username;
-        state.ob.bio = profile.bio;
-        state.ob.reasons = profile.reasons || [];
-        state.ob.photos = (profile.photos && profile.photos.length) ? profile.photos : [null,null,null];
-        state.ob.photoUri = profile.photos && profile.photos[0];
-        state.ob.loc = profile.location_mode || "live";
-        state.idVerified = !!profile.id_verified;
-        state.ageVerified = !!profile.age_verified;
-        state.isAdmin = !!profile.is_admin;
-        $("#adminEntryLink").hidden = !state.isAdmin;
+        hydrateStateFromProfile(profile);
       }).catch(()=>{});
     }).catch(()=>{});
   }
+
+  /* ---------------- Real login (returning accounts, passwordless) ----------------
+     Same email-OTP mechanism as signup verification -- Supabase recognizes an email that
+     already has an account and signs into it rather than creating a duplicate. */
+  function sendLoginOtp(){
+    const email = $("#loginEmail").value.trim();
+    if(!sb || !email){ toast("Enter your email first."); return; }
+    $("#loginSendCodeBtn").disabled = true;
+    sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } }).then(({ error })=>{
+      $("#loginSendCodeBtn").disabled = false;
+      if(error){
+        console.error("login signInWithOtp error", error);
+        toast("Couldn't send a code — if you don't have an account yet, create one instead.");
+        return;
+      }
+      $("#loginEmailStep1").hidden = true;
+      $("#loginEmailStep2").hidden = false;
+      $("#loginCodeSentText").textContent = `Code sent to ${email} — check your inbox (and spam folder).`;
+    });
+  }
+  $("#loginSendCodeBtn").addEventListener("click", sendLoginOtp);
+  $("#loginResendBtn").addEventListener("click", sendLoginOtp);
+
+  $("#loginVerifyBtn").addEventListener("click", ()=>{
+    const email = $("#loginEmail").value.trim();
+    const code = $("#loginOtpInput").value.replace(/\D/g, "");
+    if(!sb){ toast("Backend isn't reachable right now."); return; }
+    if(code.length < 4){ toast("Enter the code from your email."); return; }
+    $("#loginVerifyBtn").disabled = true;
+    $("#loginVerifyBtn").textContent = "Verifying…";
+    sb.auth.verifyOtp({ email, token: code, type: "email" }).then(({ data, error })=>{
+      $("#loginVerifyBtn").disabled = false;
+      $("#loginVerifyBtn").textContent = "Verify & log in";
+      if(error){ toast("That code didn't match — check it or tap Resend."); return; }
+      state.realUserId = data.user.id;
+      sb.from("profiles").select("*").eq("id", data.user.id).single().then(({ data: profile, error: pErr })=>{
+        if(pErr || !profile){
+          toast("Verified, but no profile found — let's finish setting one up.");
+          showScreen("onboarding");
+          return;
+        }
+        hydrateStateFromProfile(profile);
+        toast(`Welcome back, ${profile.username}!`);
+        loadRealProfiles();
+        showScreen("discover");
+      });
+    });
+  });
 
   /* ---------------- Demo stakeholder logins ----------------
      Two hardcoded accounts so stakeholders can see a populated profile/matches/chat instantly

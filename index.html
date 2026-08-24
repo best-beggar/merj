@@ -78,16 +78,40 @@
     <div class="onboard-wrap">
       <button class="icon-btn" data-nav="landing" aria-label="Back" style="margin-bottom:16px;">←</button>
       <h2>Log in</h2>
-      <p class="muted">For this prototype, two demo stakeholder accounts skip signup entirely and drop you straight into a populated profile.</p>
-      <label class="field">Username
-        <input type="text" id="loginUsername" placeholder="female1 or male1" autocomplete="username">
-      </label>
-      <label class="field">Password
-        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
-      </label>
-      <button class="btn btn--primary btn--block" id="loginBtn">Log in</button>
-      <p class="muted-sm" style="text-align:center;">Demo accounts: <strong>female1 / femtest</strong> and <strong>male1 / maletest</strong></p>
+
+      <div class="panel-section" id="loginEmailStep1">
+        <h4>Your account</h4>
+        <p class="muted-sm">Merj doesn't use passwords — we'll email you a one-time code instead.</p>
+        <label class="field">Email
+          <input type="email" id="loginEmail" placeholder="you@example.com" autocomplete="email">
+        </label>
+        <button class="btn btn--primary btn--block" id="loginSendCodeBtn">Send me a code</button>
+      </div>
+
+      <div class="panel-section" id="loginEmailStep2" hidden>
+        <h4>Enter your code</h4>
+        <p class="muted-sm" id="loginCodeSentText">Code sent — check your inbox (and spam folder).</p>
+        <label class="field">Verification code
+          <input type="text" id="loginOtpInput" inputmode="numeric" autocomplete="one-time-code" placeholder="Paste or type the code" style="text-align:center; font-size:20px; letter-spacing:2px;">
+        </label>
+        <button class="btn btn--primary btn--block" id="loginVerifyBtn">Verify & log in</button>
+        <p style="text-align:center;"><button class="link-btn" id="loginResendBtn">Resend code</button></p>
+      </div>
+
       <p class="muted-sm" style="text-align:center;">New here? <button class="link-btn" data-nav="onboarding">Create an account</button></p>
+
+      <div class="panel-section" style="margin-top:24px;">
+        <h4>Demo stakeholder accounts</h4>
+        <p class="muted-sm">Skips signup entirely and drops you into a populated profile — for demos, not real use.</p>
+        <label class="field">Username
+          <input type="text" id="loginUsername" placeholder="female1 or male1" autocomplete="username">
+        </label>
+        <label class="field">Password
+          <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+        </label>
+        <button class="btn btn--outline btn--block" id="loginBtn">Log in as demo account</button>
+        <p class="muted-sm" style="text-align:center;">Demo accounts: <strong>female1 / femtest</strong> and <strong>male1 / maletest</strong></p>
+      </div>
     </div>
   </section>
 
@@ -865,6 +889,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=14"></script>
+<script src="js/app.js?v=15"></script>
 </body>
 </html>
