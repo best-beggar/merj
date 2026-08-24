@@ -1,6 +1,11 @@
 -- Merj Phase 1 schema. Run this once in the Supabase SQL Editor
 -- (Dashboard -> SQL Editor -> New query -> paste all of this -> Run).
 --
+-- IMPORTANT: also run sql/002_fix_admin_recursion.sql straight after this one -- the admin-
+-- access policies below have a self-referencing bug (Postgres will error with "infinite
+-- recursion detected in policy for relation profiles") that 002 fixes. Migration files are
+-- applied in order and not rewritten after the fact, same as any real migration history.
+--
 -- Design notes:
 --  * Call content is never stored anywhere in this schema, by design -- only metadata
 --    (who called whom, when, how long). This encodes the "metadata only, report-driven
