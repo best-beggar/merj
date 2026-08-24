@@ -380,17 +380,6 @@
      Supabase Auth — a separate account/cost decision, deferred for now. Email OTP is free and
      built in, so that's the real verification channel for Phase 1; the phone field is still
      collected as profile data, just not the verification mechanism yet. */
-  function otpBoxes(){ return $$(".otp-box", $("#obOtpRow")); }
-  otpBoxes().forEach((box, i)=>{
-    box.addEventListener("input", ()=>{
-      box.value = box.value.replace(/\D/g, "").slice(0,1);
-      if(box.value && otpBoxes()[i+1]) otpBoxes()[i+1].focus();
-    });
-    box.addEventListener("keydown", (e)=>{
-      if(e.key === "Backspace" && !box.value && otpBoxes()[i-1]) otpBoxes()[i-1].focus();
-    });
-  });
-
   function sendRealOtp(){
     const email = $("#obEmail").value.trim();
     if(!sb || !email) return;
@@ -399,7 +388,7 @@
     sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } }).then(({ error })=>{
       $("#obOtpHint").textContent = error
         ? "Couldn't send a code — check the email address, then try Resend."
-        : "Enter the 6-digit code we emailed you.";
+        : "Enter the code we emailed you (check spam if it doesn't show up in a minute).";
       if(error) console.error("signInWithOtp error", error);
     });
   }
@@ -414,8 +403,8 @@
       return;
     }
     const email = $("#obEmail").value.trim();
-    const code = otpBoxes().map(b=>b.value).join("");
-    if(code.length < 6){ toast("Enter the full 6-digit code."); return; }
+    const code = $("#obOtpInput").value.replace(/\D/g, "");
+    if(code.length < 4){ toast("Enter the code from your email."); return; }
     $("#obNext").disabled = true;
     $("#obNext").textContent = "Verifying…";
     sb.auth.verifyOtp({ email, token: code, type: "email" }).then(({ data, error })=>{

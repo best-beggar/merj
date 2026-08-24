@@ -182,15 +182,10 @@
       <!-- Step 6: verify -->
       <div class="ob-step" data-step="6">
         <h2>Verify your email</h2>
-        <p class="muted" id="obVerifyCopy">We've emailed a 6-digit code to <span id="obEmailConfirm">your address</span>. This unlocks browsing — no photo ID needed to get started.</p>
-        <div class="otp-row" id="obOtpRow">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-          <input maxlength="1" class="otp-box" inputmode="numeric">
-        </div>
+        <p class="muted" id="obVerifyCopy">We've emailed a code to <span id="obEmailConfirm">your address</span>. This unlocks browsing — no photo ID needed to get started.</p>
+        <label class="field">Verification code
+          <input type="text" id="obOtpInput" inputmode="numeric" autocomplete="one-time-code" placeholder="Paste or type the code from your email" style="text-align:center; font-size:20px; letter-spacing:2px;">
+        </label>
         <span class="field-hint" id="obOtpHint">Sending your code…</span>
         <p style="text-align:center;"><button class="link-btn" id="obResendOtpBtn">Resend code</button></p>
       </div>
@@ -796,6 +791,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=12"></script>
+<script src="js/app.js?v=13"></script>
 </body>
 </html>
