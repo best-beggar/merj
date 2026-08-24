@@ -90,9 +90,11 @@ img{ max-width: 100%; display:block; }
 /* ---------- Landing ---------- */
 .screen--landing{ padding-bottom: 40px; }
 .landing-nav{
-  display:flex; align-items:center; justify-content:space-between;
   padding: 16px 20px; position: sticky; top:0; background: rgba(255,255,255,0.85); backdrop-filter: blur(8px); z-index: 5;
   border-bottom: 1px solid var(--border);
+}
+.landing-nav-inner{
+  display:flex; align-items:center; justify-content:space-between; max-width: 1200px; margin: 0 auto;
 }
 .brand{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:20px; }
 .brand-mark{
@@ -244,7 +246,7 @@ img{ max-width: 100%; display:block; }
 }
 .swipe-card:active{ cursor:grabbing; }
 .card-photo{
-  height: 68%; background: var(--gradient); background-size:cover; background-position:center top; background-repeat:no-repeat;
+  height: 60%; background: var(--gradient); background-size:cover; background-position:center top; background-repeat:no-repeat;
   display:flex; align-items:center; justify-content:center;
   font-size: 64px; font-weight:800; color: rgba(255,255,255,0.9); position:relative;
 }
@@ -252,14 +254,14 @@ img{ max-width: 100%; display:block; }
   position:absolute; top:12px; right:12px; background: rgba(0,0,0,0.45); color:#fff; font-size:11px;
   padding: 5px 10px; border-radius:999px; display:flex; align-items:center; gap:4px;
 }
-.card-body{ padding: 14px 16px; }
+.card-body{ padding: 14px 16px 20px; }
 .card-name-row{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
 .card-name-row h3{ font-size:19px; margin:0; }
 .card-name-row .distance{ font-size:12px; color: var(--muted-2); margin-left:auto; }
 .card-tags{ display:flex; flex-wrap:wrap; gap:6px; margin: 8px 0; }
 .card-tags .tag{ font-size:10px; background: var(--surface-2); border-radius:999px; padding:4px 9px; color: var(--muted); }
-.card-bio{ font-size:13px; color: var(--muted); margin:0; }
-.card-verified{ font-size:11px; color: var(--success); display:flex; align-items:center; gap:4px; margin-top:6px; }
+.card-bio{ font-size:13px; color: var(--muted); margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.card-verified{ font-size:11px; color: var(--success); display:flex; align-items:center; gap:4px; margin-top:10px; }
 
 .stamp{ position:absolute; top:26px; font-size: 26px; font-weight:800; padding: 6px 14px; border-radius:8px; border:4px solid; text-transform:uppercase; opacity:0; pointer-events:none; letter-spacing:.05em; }
 .stamp--like{ left:20px; color: var(--success); border-color: var(--success); transform: rotate(-14deg); }
