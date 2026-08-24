@@ -132,7 +132,10 @@
   const state = {
     screen: "landing",
     prevScreen: "discover",
-    ob: { step:1, totalSteps:6, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false },
+    ob: { step:1, totalSteps:6, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false },
+    guestMode: false,
+    guestSwipeCount: 0,
+    guestGateTriggered: false,
     swipesUsed: 0,
     swipesLimit: 200,
     deckIndex: 0,
@@ -165,7 +168,9 @@
     detailProfile: null,
     detailPhotoIndex: 0,
     detailContext: "deck",       // "deck" | "match" | "like"
-    rtc: { peer:null, call:null, localStream:null, roomCode:null, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null, activeCallProfileId:null, connected:false },
+    rtc: { peer:null, call:null, localStream:null, roomCode:null, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null, activeCallProfileId:null, connected:false, isBlindDate:false, wasVideo:false },
+    blindPeer: null,
+    blindFiltersUnlocked: false,
   };
 
   const $ = (sel, root) => (root||document).querySelector(sel);
@@ -233,6 +238,36 @@
   document.addEventListener("click", (e)=>{
     const navBtn = e.target.closest("[data-nav]");
     if(navBtn) showScreen(navBtn.dataset.nav);
+    if(e.target.closest('[data-action="guestStart"]')) startGuestMode();
+  });
+
+  /* ---------------- Guest mode (0-step entry, gated after a taste) ----------------
+     New visitors can swipe immediately with no signup. The gate below fires the moment they
+     hit 10 swipes OR get a match/like — whichever comes first — same idea Hinge/Bumble-style
+     apps use to cut signup friction while still requiring verification before anyone can really
+     use the platform (message, be messaged, keep browsing indefinitely). */
+  function startGuestMode(){
+    state.guestMode = true;
+    state.guestSwipeCount = 0;
+    state.guestGateTriggered = false;
+    if(!state.ob.username) state.ob.username = "Guest";
+    showScreen("discover");
+  }
+
+  function triggerGuestGate(reason){
+    if(!state.guestMode || state.guestGateTriggered) return;
+    state.guestGateTriggered = true;
+    $("#guestGateText").textContent = reason;
+    $("#guestGateOverlay").hidden = false;
+  }
+
+  $("#guestGateVerifyBtn").addEventListener("click", ()=>{
+    $("#guestGateOverlay").hidden = true;
+    state.ob.guestUpgradeMode = true;
+    state.ob.step = 1;
+    if(state.ob.username === "Guest") state.ob.username = "";
+    updateOnboardUI();
+    showScreen("onboarding");
   });
 
   /* ---------------- Onboarding ---------------- */
@@ -256,7 +291,15 @@
     if(state.ob.step === 6){
       $("#obPhoneConfirm").textContent = $("#obPhone").value || "your number";
     }
+    // Guests upgrading mid-swipe only need identity + verification (steps 1 & 6) to keep going —
+    // photos/reasons/extras can be skipped and finished later from the profile screen.
+    $("#obSkipRow").hidden = !(state.ob.guestUpgradeMode && state.ob.step > 1 && state.ob.step < 6);
   }
+  $("#obSkipBtn").addEventListener("click", ()=>{
+    state.ob.step = 6;
+    updateOnboardUI();
+    saveOnboardingDraft();
+  });
 
   function validateStep(step){
     if(step === 1){
@@ -344,6 +387,7 @@
         username: $("#obUsername").value, email: $("#obEmail").value, phone: $("#obPhone").value,
         dob: $("#obDob").value, city: $("#obCity").value, bio: $("#obBio").value,
         social1: $("#obSocial1").value, social2: $("#obSocial2").value, contacts: $("#obContacts").checked,
+        guestUpgradeMode: state.ob.guestUpgradeMode, guestMode: state.guestMode,
       }));
     }catch(e){ /* storage full/unavailable — draft just won't survive a reload this time */ }
   }
@@ -357,6 +401,8 @@
     state.ob.photos = d.photos || [null,null,null];
     state.ob.reasons = d.reasons || [];
     state.ob.step = d.step || 1;
+    state.ob.guestUpgradeMode = !!d.guestUpgradeMode;
+    state.guestMode = !!d.guestMode;
     $("#obUsername").value = d.username || "";
     $("#obEmail").value = d.email || "";
     $("#obPhone").value = d.phone || "";
@@ -449,8 +495,19 @@
     state.ob.social2 = $("#obSocial2").value.trim();
     state.ob.contacts = $("#obContacts").checked;
     try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
-    toast(`Welcome to Merj, ${state.ob.username}!`);
-    showScreen("discover");
+    const wasGuestUpgrade = state.ob.guestUpgradeMode;
+    state.ob.guestUpgradeMode = false;
+    if(wasGuestUpgrade){
+      state.guestMode = false;
+      toast(`Verified — welcome to Merj, ${state.ob.username}!`);
+      showScreen("discover");
+      if(state.ob.photos.filter(Boolean).length < 3){
+        setTimeout(()=> toast("Add 3 photos from your profile so others can see you in Discover."), 2500);
+      }
+    } else {
+      toast(`Welcome to Merj, ${state.ob.username}!`);
+      showScreen("discover");
+    }
   }
 
   /* ---------------- Demo stakeholder logins ----------------
@@ -630,6 +687,10 @@
       if(isMatch) createMatch(profile);
     }
     maybeDripNewLike();
+    if(state.guestMode){
+      state.guestSwipeCount++;
+      if(state.guestSwipeCount >= 10) triggerGuestGate("You've hit 10 free swipes as a guest. Verify your phone or email to keep going.");
+    }
     setTimeout(()=>{ renderDeck(); }, 220);
     updateSwipeMeter();
   }
@@ -650,6 +711,7 @@
     state.likesReceived.unshift(liker);
     toast(`💗 ${liker.name} likes you! Check Activity to say hi.`);
     if(state.screen === "activity") renderActivity();
+    if(state.guestMode) triggerGuestGate("Someone likes you! Verify your phone or email to see who and match back.");
   }
 
   $("#passBtn").addEventListener("click", ()=>{
@@ -682,11 +744,14 @@
   // rewarded ads for the eventual native app) and call grantAdReward() from its "reward earned"
   // callback instead of the timer. Signing up for/getting approved by an ad network is an account
   // step only you can do — this just leaves the exact spot to plug it in.
-  function playRewardedAd(){
+  let pendingAdReward = null;
+  function playRewardedAd(claimLabel, onComplete){
+    pendingAdReward = onComplete;
     $("#adOverlay").hidden = false;
     $("#adCloseBtn").disabled = true;
+    $("#adCopy").textContent = "Playing a short ad…";
     let secs = 6;
-    $("#adCountdown").textContent = secs;
+    $("#adCloseBtn").innerHTML = `Watching… <span id="adCountdown">${secs}</span>s`;
     $("#adProgressFill").style.width = "0%";
     requestAnimationFrame(()=> $("#adProgressFill").style.width = "100%");
     const timer = setInterval(()=>{
@@ -694,25 +759,23 @@
       if(secs <= 0){
         clearInterval(timer);
         $("#adCloseBtn").disabled = false;
-        $("#adCloseBtn").innerHTML = "Claim +10 swipes";
+        $("#adCloseBtn").innerHTML = claimLabel || "Claim reward";
         $("#adCopy").textContent = "Reward earned — tap to close.";
       } else {
         $("#adCountdown").textContent = secs;
       }
     }, 1000);
   }
-  function grantAdReward(){
+  $("#watchAdBtn").addEventListener("click", ()=> playRewardedAd("Claim +10 swipes", ()=>{
     state.swipesLimit += 10;
     toast("+10 swipes unlocked!");
     renderDeck();
-  }
-  $("#watchAdBtn").addEventListener("click", playRewardedAd);
+  }));
   $("#adCloseBtn").addEventListener("click", ()=>{
     if($("#adCloseBtn").disabled) return;
     $("#adOverlay").hidden = true;
-    $("#adCloseBtn").innerHTML = 'Watching… <span id="adCountdown">6</span>s';
-    $("#adCopy").textContent = "Playing a short ad…";
-    grantAdReward();
+    if(pendingAdReward) pendingAdReward();
+    pendingAdReward = null;
   });
 
   /* ---------------- Matching + chat ---------------- */
@@ -733,11 +796,16 @@
     $("#matchOverlay")._profileId = profile.id;
     const badge = $("#matchBadge");
     badge.hidden = false; badge.textContent = state.matches.length;
+    if(state.guestMode) state.pendingGuestGate = "You've got a match! Verify your phone or email to start chatting.";
   }
-  $("#matchDismissBtn").addEventListener("click", ()=>{ $("#matchOverlay").hidden = true; });
+  $("#matchDismissBtn").addEventListener("click", ()=>{
+    $("#matchOverlay").hidden = true;
+    if(state.pendingGuestGate){ triggerGuestGate(state.pendingGuestGate); state.pendingGuestGate = null; }
+  });
   $("#matchChatBtn").addEventListener("click", ()=>{
     const id = $("#matchOverlay")._profileId;
     $("#matchOverlay").hidden = true;
+    if(state.pendingGuestGate){ const reason = state.pendingGuestGate; state.pendingGuestGate = null; triggerGuestGate(reason); return; }
     openChat(id);
   });
 
@@ -881,9 +949,12 @@
     state.rtc.connected = false;
     state.rtc.wasVideo = isVideo;
     state.rtc.skipFaceCheck = !!(profile.has18 && state.ageVerified); // consensual 18+ pairing: face-required check doesn't apply
+    state.rtc.isBlindDate = false;
     openCallOverlay(isVideo, `${isVideo ? "Video" : "Audio"} calling ${profile.name}…`);
     $("#callRoomBox").hidden = false;
     $("#roomCodeDisplay").value = "generating…";
+    $("#callReportBtn").hidden = true;
+    $("#callFootnote").hidden = false;
 
     navigator.mediaDevices.getUserMedia({ audio:true, video:isVideo })
       .then(stream=>{
@@ -923,13 +994,17 @@
   function endCall(logHistory){
     if(state.rtc.call) state.rtc.call.close();
     if(state.rtc.localStream) state.rtc.localStream.getTracks().forEach(t=>t.stop());
+    if(state.blindPeer){ state.blindPeer.destroy(); state.blindPeer = null; }
     stopFaceCheck();
     state.rtc.call = null;
     state.rtc.localStream = null;
     $("#remoteVideo").srcObject = null;
     $("#localVideo").srcObject = null;
     $("#callOverlay").hidden = true;
+    $("#callReportBtn").hidden = true;
+    $("#callFootnote").hidden = false;
     const wasConnected = state.rtc.connected;
+    const wasBlindDate = state.rtc.isBlindDate;
     if(logHistory !== false){
       const isVideo = $("#videoStage").style.display !== "none";
       state.callHistory.unshift({
@@ -940,9 +1015,137 @@
       });
       if(state.screen === "activity") renderActivity();
     }
-    if(wasConnected) maybeShowVerifyPrompt();
+    if(wasConnected && !wasBlindDate) maybeShowVerifyPrompt();
     state.rtc.connected = false;
+    state.rtc.isBlindDate = false;
+    resetBlindDateUI();
   }
+
+  /* ---------------- Blind Date ----------------
+     Real peer-to-peer stranger matching using a single well-known PeerJS ID as a one-slot
+     "lobby": whoever claims it first waits; the next visitor who tries instead calls that ID
+     directly. This genuinely pairs two concurrent real visitors on the live site — it just
+     can't apply the filters below to a pool, because there is no pool without a real
+     matchmaking backend holding a live queue. That's the honest limit of a static site. */
+  const BLIND_LOBBY_ID = "merj-blind-lobby-v1";
+  let blindSearchTimeout = null;
+
+  function updateBlindRangeLabels(){
+    $("#blindDistanceVal").textContent = $("#blindRangeDistance").value;
+    $("#blindAgeMinVal").textContent = $("#blindRangeAgeMin").value;
+    $("#blindAgeMaxVal").textContent = $("#blindRangeAgeMax").value;
+  }
+  $("#blindRangeDistance").addEventListener("input", updateBlindRangeLabels);
+  $("#blindRangeAgeMin").addEventListener("input", e=>{
+    if(Number(e.target.value) > Number($("#blindRangeAgeMax").value)) e.target.value = $("#blindRangeAgeMax").value;
+    updateBlindRangeLabels();
+  });
+  $("#blindRangeAgeMax").addEventListener("input", e=>{
+    if(Number(e.target.value) < Number($("#blindRangeAgeMin").value)) e.target.value = $("#blindRangeAgeMin").value;
+    updateBlindRangeLabels();
+  });
+  $("#blindShowMeChips").addEventListener("click", e=>{
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    $$(".chip", $("#blindShowMeChips")).forEach(c=>c.classList.remove("is-selected"));
+    chip.classList.add("is-selected");
+  });
+
+  $("#blindUnlockFiltersBtn").addEventListener("click", ()=>{
+    playRewardedAd("Unlock filters", ()=>{
+      state.blindFiltersUnlocked = true;
+      $("#blindFilterLockBadge").textContent = "✓ Unlocked";
+      $("#blindFilterUnlockCopy").hidden = true;
+      $("#blindUnlockFiltersBtn").hidden = true;
+      $("#blindFilterControls").hidden = false;
+      toast("Filters unlocked for this session.");
+    });
+  });
+
+  function resetBlindDateUI(){
+    $("#blindStartSection").hidden = false;
+    $("#blindSearching").hidden = true;
+  }
+
+  function cancelBlindSearch(){
+    clearTimeout(blindSearchTimeout);
+    if(state.blindPeer){ state.blindPeer.destroy(); state.blindPeer = null; }
+    if(state.rtc.localStream){ state.rtc.localStream.getTracks().forEach(t=>t.stop()); state.rtc.localStream = null; }
+    resetBlindDateUI();
+  }
+
+  function startBlindDate(kind){
+    const isVideo = kind === "video";
+    $("#blindStartSection").hidden = true;
+    $("#blindSearching").hidden = false;
+    $("#blindSearchStatus").textContent = "Connecting…";
+
+    navigator.mediaDevices.getUserMedia({ audio:true, video:isVideo }).then(stream=>{
+      state.rtc.localStream = stream;
+      state.rtc.activeCallProfileName = "A stranger";
+      state.rtc.activeCallProfileId = null;
+      state.rtc.wasVideo = isVideo;
+      state.rtc.skipFaceCheck = false; // anonymous strangers always get the face-presence check
+      state.rtc.connected = false;
+      state.rtc.isBlindDate = true;
+
+      function onConnected(call){
+        clearTimeout(blindSearchTimeout);
+        $("#localVideo").srcObject = stream;
+        wireCall(call, isVideo);
+        openCallOverlay(isVideo, "Connecting…");
+        $("#callRoomBox").hidden = true;
+        $("#callFootnote").hidden = true;
+        $("#callReportBtn").hidden = false;
+        showScreen("discover");
+        resetBlindDateUI();
+      }
+
+      const waiter = new Peer(BLIND_LOBBY_ID);
+      state.blindPeer = waiter;
+      waiter.on("open", ()=>{
+        $("#blindSearchStatus").textContent = "Waiting for another guest to start a blind date… (up to 30s)";
+        blindSearchTimeout = setTimeout(()=>{
+          toast("No one showed up this time — try again, or open a second tab to test it solo.");
+          cancelBlindSearch();
+        }, 30000);
+      });
+      waiter.on("call", incomingCall=>{
+        incomingCall.answer(stream);
+        onConnected(incomingCall);
+      });
+      waiter.on("error", err=>{
+        if(err.type !== "unavailable-id"){
+          toast("Blind date connection error: " + err.type);
+          cancelBlindSearch();
+          return;
+        }
+        // Someone's already waiting in the lobby — call them directly instead of waiting ourselves.
+        waiter.destroy();
+        const caller = new Peer();
+        state.blindPeer = caller;
+        caller.on("open", ()=>{
+          const call = caller.call(BLIND_LOBBY_ID, stream, { metadata:{ video:isVideo, callerName:"A stranger" } });
+          onConnected(call);
+        });
+        caller.on("error", e2=>{ toast("Blind date connection error: " + e2.type); cancelBlindSearch(); });
+      });
+    }).catch(()=>{
+      toast("Camera/mic permission is needed for a blind date.");
+      resetBlindDateUI();
+    });
+  }
+
+  $("#blindStartAudioBtn").addEventListener("click", ()=> startBlindDate("audio"));
+  $("#blindStartVideoBtn").addEventListener("click", ()=> startBlindDate("video"));
+  $("#blindCancelBtn").addEventListener("click", cancelBlindSearch);
+  $("#blindOpenOtherTabBtn").addEventListener("click", ()=>{
+    window.open(location.origin + location.pathname, "_blank");
+  });
+  $("#callReportBtn").addEventListener("click", ()=>{
+    toast("Stranger reported and call ended. Thanks for helping keep Merj safe.");
+    endCall(false);
+  });
 
   $("#audioCallBtn").addEventListener("click", ()=> startCall("audio"));
   $("#videoCallBtn").addEventListener("click", ()=> startCall("video"));
@@ -1115,14 +1318,20 @@
   });
 
   /* ---------------- Filters ---------------- */
-  $("#rangeDistance").addEventListener("input", e=>{ $("#distanceVal").textContent = e.target.value; });
+  function updateFilterSummary(){
+    $("#filterSummaryDistance").textContent = `${$("#rangeDistance").value} km`;
+    $("#filterSummaryAge").textContent = `${$("#rangeAgeMin").value}–${$("#rangeAgeMax").value}`;
+  }
+  $("#rangeDistance").addEventListener("input", e=>{ $("#distanceVal").textContent = e.target.value; updateFilterSummary(); });
   $("#rangeAgeMin").addEventListener("input", e=>{
     if(Number(e.target.value) > Number($("#rangeAgeMax").value)) e.target.value = $("#rangeAgeMax").value;
     $("#ageMinVal").textContent = e.target.value;
+    updateFilterSummary();
   });
   $("#rangeAgeMax").addEventListener("input", e=>{
     if(Number(e.target.value) < Number($("#rangeAgeMin").value)) e.target.value = $("#rangeAgeMin").value;
     $("#ageMaxVal").textContent = e.target.value;
+    updateFilterSummary();
   });
   $("#filterReasonChips").addEventListener("click", e=>{
     const chip = e.target.closest(".chip");
@@ -1136,6 +1345,7 @@
     $$("#filterReasonChips .chip").forEach(c=>c.classList.remove("is-selected"));
     $("#show18Toggle").checked = false;
     $("#verifiedOnlyToggle").checked = true;
+    updateFilterSummary();
     toast("Filters reset");
   });
 
@@ -1621,5 +1831,6 @@
   $("#photoGrid").addEventListener("change", onPhotoSelected);
   updateOnboardUI();
   updateSwipeMeter();
+  updateFilterSummary();
   restoreOnboardingDraftIfAny();
 })();

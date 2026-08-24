@@ -6,7 +6,7 @@
 <title>Merj — Swipe. Match. Mean it.</title>
 <meta name="description" content="Merj is a free dating platform built around honest matching, real safety controls, and zero paywalls.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff3b6e'/%3E%3Cstop offset='0.55' stop-color='%23ff7a3d'/%3E%3Cstop offset='1' stop-color='%239b5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M16 25.8l-1.9-1.76C7.2 18.2 3 14.4 3 9.9 3 6.2 5.9 3.3 9.6 3.3c2.1 0 4.1 1 5.4 2.5 1.3-1.5 3.3-2.5 5.4-2.5 3.7 0 6.6 2.9 6.6 6.6 0 4.5-4.2 8.3-11.1 14.1L16 25.8z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=5">
+<link rel="stylesheet" href="css/styles.css?v=6">
 </head>
 <body>
 
@@ -22,11 +22,12 @@
     <h1>Dating, chatting, video calls — all free, always.</h1>
     <p class="hero-sub">Swipe left, swipe right, match instantly, and actually talk — voice or video — the moment you both say yes. No paywalled messaging, ever.</p>
     <div class="hero-cta">
-      <button class="btn btn--primary btn--lg" data-nav="onboarding">Join Merj — 100% free</button>
+      <button class="btn btn--primary btn--lg" data-action="guestStart">Start swiping — no sign-up</button>
+      <button class="btn btn--outline btn--lg" data-nav="onboarding">Set up a full profile instead</button>
     </div>
     <div class="trust-strip">
       <div class="trust-item"><strong>18+</strong><span>Age-gated platform</span></div>
-      <div class="trust-item"><strong>Phone verified</strong><span>Required to browse</span></div>
+      <div class="trust-item"><strong>Phone/email verified</strong><span>After your first few free swipes</span></div>
       <div class="trust-item"><strong>Human + AI</strong><span>moderated safety</span></div>
     </div>
   </div>
@@ -191,6 +192,9 @@
         <span class="field-hint">Prototype: any 4 digits work.</span>
       </div>
 
+      <p class="muted-sm" id="obSkipRow" hidden style="text-align:center;">
+        <button class="link-btn" id="obSkipBtn">Skip for now — finish this later from your profile</button>
+      </p>
       <div class="ob-nav">
         <button class="btn btn--ghost" id="obBack">Back</button>
         <button class="btn btn--primary" id="obNext">Continue</button>
@@ -209,6 +213,14 @@
         <button class="icon-btn" data-nav="filters" aria-label="Filters">⚙️</button>
       </div>
     </header>
+
+    <div class="filter-summary" id="filterSummary">
+      <button class="filter-chip" data-nav="filters">📍 <span id="filterSummaryDistance">50 km</span></button>
+      <button class="filter-chip" data-nav="filters">🎂 <span id="filterSummaryAge">18–45</span></button>
+      <button class="filter-chip filter-chip--main" data-nav="filters">⚙️ Filters</button>
+    </div>
+
+    <button class="blind-date-banner" data-nav="blindDate">🎲 Try a Blind Date — random voice/video with a stranger <span>→</span></button>
 
     <div class="swipe-meter">
       <div class="swipe-meter-bar"><div class="swipe-meter-fill" id="swipeFill"></div></div>
@@ -298,6 +310,55 @@
         </label>
       </div>
       <button class="btn btn--primary btn--block" data-nav="discover">Apply filters</button>
+    </div>
+  </section>
+
+  <!-- ---------- BLIND DATE ---------- -->
+  <section class="screen" data-screen="blindDate">
+    <header class="app-header">
+      <button class="icon-btn" data-nav="discover" aria-label="Back">←</button>
+      <div class="app-header-title">Blind Date</div>
+    </header>
+    <div class="scroll-panel">
+      <div class="panel-section">
+        <h4>How it works</h4>
+        <p class="muted-sm">Tap start and you're connected to a random stranger for a voice or video call — no profile, no swiping, just a conversation. Either side can end it any time, and reporting is always one tap away.</p>
+        <p class="muted-sm"><strong>Prototype note:</strong> without a real matchmaking backend behind this, it pairs you with whoever else on the live site is waiting right now — the filters below are fully functional but can't narrow a pool that doesn't exist yet. If no one's around, use "open a second tab" to try it solo.</p>
+      </div>
+
+      <div class="panel-section">
+        <h4>Filters <span id="blindFilterLockBadge" class="badge">🔒 Locked</span></h4>
+        <p class="muted-sm" id="blindFilterUnlockCopy">Watch a short ad to filter who you're paired with by distance, age, and who you'd like to meet.</p>
+        <button class="btn btn--outline btn--block" id="blindUnlockFiltersBtn">Watch ad to unlock filters</button>
+        <div id="blindFilterControls" hidden>
+          <h4 style="margin-top:14px;">Distance</h4>
+          <input type="range" min="1" max="200" value="50" id="blindRangeDistance">
+          <div class="range-value"><span id="blindDistanceVal">50</span> km</div>
+          <h4 style="margin-top:14px;">Age range</h4>
+          <div class="dual-range-labels"><span id="blindAgeMinVal">18</span> – <span id="blindAgeMaxVal">45</span></div>
+          <input type="range" min="18" max="80" value="18" id="blindRangeAgeMin">
+          <input type="range" min="18" max="80" value="45" id="blindRangeAgeMax">
+          <h4 style="margin-top:14px;">Show me</h4>
+          <div class="chip-group" id="blindShowMeChips">
+            <button class="chip is-selected" data-showme="everyone">Everyone</button>
+            <button class="chip" data-showme="women">Women</button>
+            <button class="chip" data-showme="men">Men</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section" id="blindStartSection">
+        <button class="btn btn--primary btn--block" id="blindStartAudioBtn">🎙️ Start random voice call</button>
+        <button class="btn btn--primary btn--block" id="blindStartVideoBtn">🎥 Start random video call</button>
+      </div>
+
+      <div class="panel-section" id="blindSearching" hidden style="text-align:center;">
+        <div class="deck-empty-icon">🔎</div>
+        <h3>Looking for someone…</h3>
+        <p class="muted-sm" id="blindSearchStatus">Waiting for another guest to start a blind date.</p>
+        <button class="btn btn--ghost btn--sm" id="blindOpenOtherTabBtn">Open a second tab to test solo</button>
+        <button class="btn btn--outline btn--block" id="blindCancelBtn">Cancel</button>
+      </div>
     </div>
   </section>
 
@@ -685,7 +746,8 @@
       <button class="round-btn round-btn--pass" id="callEndBtn" aria-label="End call">✕</button>
       <button class="round-btn round-btn--info" id="camToggleBtn" aria-label="Toggle camera">🎥</button>
     </div>
-    <p class="muted-sm">In production, matched users would connect automatically the instant both tap "call" — no code-sharing. That requires a signalling backend of our own (or a paid one); this demo uses PeerJS's free public broker so the real audio/video + face-presence check can be shown working today, live, on free hosting.</p>
+    <button class="btn btn--danger-ghost btn--block" id="callReportBtn" hidden>🚩 Report this stranger &amp; end call</button>
+    <p class="muted-sm" id="callFootnote">In production, matched users would connect automatically the instant both tap "call" — no code-sharing. That requires a signalling backend of our own (or a paid one); this demo uses PeerJS's free public broker so the real audio/video + face-presence check can be shown working today, live, on free hosting.</p>
   </div>
 </div>
 
@@ -716,10 +778,19 @@
   </div>
 </div>
 
+<div class="overlay" id="guestGateOverlay" hidden>
+  <div class="info-card">
+    <h3>Keep the conversation going</h3>
+    <p class="muted-sm" id="guestGateText">You've hit the guest limit. Verify your phone or email to keep swiping, matching, and chatting.</p>
+    <button class="btn btn--primary btn--block" id="guestGateVerifyBtn">Verify to continue</button>
+    <p class="muted-sm" style="text-align:center;">Photos and profile details can be added after — this is just to confirm you're a real, unique person.</p>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>

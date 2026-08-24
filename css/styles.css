@@ -215,6 +215,20 @@ img{ max-width: 100%; display:block; }
 .ob-nav{ display:flex; gap:10px; margin-top: 20px; }
 .ob-nav .btn{ flex:1; }
 
+/* ---------- Discover filter summary + blind date banner ---------- */
+.filter-summary{ display:flex; gap:8px; padding: 10px 16px 0; overflow-x:auto; }
+.filter-chip{
+  flex-shrink:0; background: var(--surface-2); border:1px solid var(--border); color: var(--text);
+  border-radius:999px; padding:7px 12px; font-size:12.5px; cursor:pointer; white-space:nowrap;
+}
+.filter-chip--main{ background: var(--gradient); color:#fff; border-color:transparent; font-weight:600; }
+.blind-date-banner{
+  display:flex; align-items:center; justify-content:space-between; width: calc(100% - 32px); margin: 10px 16px 0;
+  background: linear-gradient(135deg, rgba(155,92,255,0.14), rgba(255,59,110,0.14)); border:1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; font-size:13px; font-weight:600; color: var(--text); cursor:pointer;
+}
+.blind-date-banner span{ color: var(--primary-2); }
+
 /* ---------- Discover / swipe deck ---------- */
 .swipe-meter{ padding: 10px 16px 4px; }
 .swipe-meter-bar{ height:5px; background: var(--surface-2); border-radius: 3px; overflow:hidden; }
