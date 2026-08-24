@@ -140,6 +140,22 @@
           <input type="date" id="obDob">
           <span class="field-hint" id="dobHint">You must be 18+. We check this — no exceptions.</span>
         </label>
+        <label class="field">Your gender
+          <select class="field-select" id="obGender">
+            <option value="woman">Woman</option>
+            <option value="man">Man</option>
+            <option value="nonbinary">Non-binary</option>
+            <option value="other">Something else</option>
+          </select>
+        </label>
+        <label class="field">Show me
+          <span class="field-hint">Pick as many as you like.</span>
+          <div class="chip-group" id="obLookingForChips" style="margin-top:8px;">
+            <button type="button" class="chip" data-gender="woman">Women</button>
+            <button type="button" class="chip" data-gender="man">Men</button>
+            <button type="button" class="chip" data-gender="nonbinary">Non-binary people</button>
+          </div>
+        </label>
       </div>
 
       <!-- Step 2: location -->
@@ -300,6 +316,15 @@
         </ul>
       </div>
       <div class="panel-section">
+        <h4>Show me</h4>
+        <p class="muted-sm">Leave all unselected to see everyone.</p>
+        <div class="chip-group" id="filterGenderChips">
+          <button class="chip" data-gender="woman">Women</button>
+          <button class="chip" data-gender="man">Men</button>
+          <button class="chip" data-gender="nonbinary">Non-binary people</button>
+        </div>
+      </div>
+      <div class="panel-section">
         <h4>Distance</h4>
         <input type="range" min="1" max="200" value="50" id="rangeDistance">
         <div class="range-value"><span id="distanceVal">50</span> km</div>
@@ -333,7 +358,7 @@
           <span class="toggle-switch"></span>
         </label>
       </div>
-      <button class="btn btn--primary btn--block" data-nav="discover">Apply filters</button>
+      <button class="btn btn--primary btn--block" id="applyFiltersBtn" data-nav="discover">Apply filters</button>
     </div>
   </section>
 
@@ -891,6 +916,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=15"></script>
+<script src="js/app.js?v=16"></script>
 </body>
 </html>

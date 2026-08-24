@@ -114,15 +114,21 @@
     8: 60 * 24 * 16,  // Rio — 16 days, deprioritised
     101: 8, 102: 60 * 24 * 3, 103: 25,
   };
+  const GENDER_MAP = {
+    1:"woman", 2:"man", 3:"woman", 4:"man", 5:"woman", 6:"man", 7:"woman", 8:"man",
+    101:"woman", 102:"man", 103:"woman", 104:"woman", 105:"man",
+  };
   PROFILES.forEach(p => {
     const a = AVATAR_PARAMS[p.id];
     if(a){ p.photos = personSVGSet(a); p.photoUri = p.photos[0]; }
     p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
+    p.gender = GENDER_MAP[p.id];
   });
   LIKES_RECEIVED.forEach(p => {
     const a = AVATAR_PARAMS[p.id];
     if(a){ p.photos = personSVGSet(a); p.photoUri = p.photos[0]; }
     p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
+    p.gender = GENDER_MAP[p.id];
   });
 
   const ONLINE_MINS = 10, STALE_DAYS = 14, HIDDEN_DAYS = 60;
@@ -146,9 +152,13 @@
   // dropped -- otherwise "Aoife"/"Jordan"/etc. would appear twice. Sam/Priya/Cian are pure
   // local-only trust-engine demo profiles (the seeded red-flag examples) and always stay.
   const SEEDED_MOCK_IDS = new Set([1, 4, 5, 7, 8]);
-  function buildDiscoverDeck(){
+  // genderFilter is passed explicitly rather than read from `state` here, since this function
+  // is also called once during state's own initialization (before the `state` binding exists).
+  function buildDiscoverDeck(genderFilter){
     const localPool = REAL_PROFILES.length ? PROFILES.filter(p => !SEEDED_MOCK_IDS.has(p.id)) : PROFILES;
-    return [...localPool, ...REAL_PROFILES]
+    let pool = [...localPool, ...REAL_PROFILES];
+    if(genderFilter && genderFilter.length) pool = pool.filter(p => genderFilter.includes(p.gender));
+    return pool
       .filter(p => !isHiddenFromDiscovery(p))
       .sort((a,b) => (isStale(a)?1:0) - (isStale(b)?1:0));
   }
@@ -157,7 +167,7 @@
   const state = {
     screen: "landing",
     prevScreen: "discover",
-    ob: { step:1, totalSteps:6, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false },
+    ob: { step:1, totalSteps:6, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false, gender:"woman", lookingFor:[] },
     guestMode: false,
     guestSwipeCount: 0,
     guestGateTriggered: false,
@@ -173,7 +183,7 @@
     idVerified: false,
     ageVerified: false,
     ext18Mode: "off",
-    filters: { distance:50, ageMin:18, ageMax:45, reasons:[], show18:false, verifiedOnly:true, sort:["proximity","age","interests"] },
+    filters: { distance:50, ageMin:18, ageMax:45, reasons:[], genders:[], show18:false, verifiedOnly:true, sort:["proximity","age","interests"] },
     myCountry: "IE",
     visibility: "public",
     paused: false,
@@ -260,6 +270,9 @@
     if(name === "settings") renderSettings();
     if(name === "activity") renderActivity();
     if(name === "safety") renderSafetyScreen();
+    if(name === "filters"){
+      $$("#filterGenderChips .chip").forEach(c => c.classList.toggle("is-selected", state.filters.genders.includes(c.dataset.gender)));
+    }
     if(name === "admin"){
       if(!state.isAdmin){ toast("Admin access only."); showScreen("profile"); return; }
       renderAdminAccounts();
@@ -342,6 +355,7 @@
       if(!dob) return "Date of birth is required.";
       const age = ageFromDob(dob);
       if(age < 18) return "You must be 18 or older to use Merj.";
+      if(state.ob.lookingFor.length === 0) return "Pick at least one gender you'd like to see in Discover.";
     }
     if(step === 2){
       if(state.ob.loc === "fixed" && !$("#obCity").value.trim()) return "Enter a city, or switch to live location.";
@@ -448,6 +462,17 @@
     saveOnboardingDraft();
   });
 
+  $("#obGender").addEventListener("change", (e)=>{ state.ob.gender = e.target.value; saveOnboardingDraft(); });
+  $("#obLookingForChips").addEventListener("click", (e)=>{
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    chip.classList.toggle("is-selected");
+    const g = chip.dataset.gender;
+    if(chip.classList.contains("is-selected")) state.ob.lookingFor.push(g);
+    else state.ob.lookingFor = state.ob.lookingFor.filter(x=>x!==g);
+    saveOnboardingDraft();
+  });
+
   /* ---------------- Onboarding draft persistence ----------------
      Mobile browsers (Android Chrome especially, on lower-RAM phones) can kill a backgrounded
      tab while the user is off in the native camera app taking a signup photo. Without this,
@@ -463,6 +488,7 @@
         dob: $("#obDob").value, city: $("#obCity").value, bio: $("#obBio").value,
         social1: $("#obSocial1").value, social2: $("#obSocial2").value, contacts: $("#obContacts").checked,
         guestUpgradeMode: state.ob.guestUpgradeMode, guestMode: state.guestMode,
+        gender: state.ob.gender, lookingFor: state.ob.lookingFor,
       }));
     }catch(e){ /* storage full/unavailable — draft just won't survive a reload this time */ }
   }
@@ -478,6 +504,10 @@
     state.ob.step = d.step || 1;
     state.ob.guestUpgradeMode = !!d.guestUpgradeMode;
     state.guestMode = !!d.guestMode;
+    state.ob.gender = d.gender || "woman";
+    state.ob.lookingFor = d.lookingFor || [];
+    $("#obGender").value = state.ob.gender;
+    $$('#obLookingForChips .chip').forEach(c => c.classList.toggle("is-selected", state.ob.lookingFor.includes(c.dataset.gender)));
     $("#obUsername").value = d.username || "";
     $("#obEmail").value = d.email || "";
     $("#obPhone").value = d.phone || "";
@@ -625,6 +655,8 @@
         phone_verified: false,
         email_verified: true,
         referred_by: getStoredReferralCode(),
+        gender: state.ob.gender,
+        looking_for: state.ob.lookingFor,
       });
     }).then(({ error })=>{
       if(error){
@@ -667,10 +699,11 @@
           photoUri: (row.photos && row.photos.length) ? row.photos[0] : personSVG({ bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", style:"short", top:"#495057" }),
           lastActiveMins: row.last_active_at ? Math.max(0, Math.round((Date.now() - new Date(row.last_active_at).getTime())/60000)) : 0,
           declaredCountry: row.declared_country, ipCountry: row.declared_country, phoneCountry: row.declared_country,
+          gender: row.gender,
           aiPhotoSuspected: false, duplicateImageFlag: false, accountAgeDays: 1, likeRatio: 0.3,
         });
       });
-      state.deck = buildDiscoverDeck();
+      state.deck = buildDiscoverDeck(state.filters.genders);
       if(state.screen === "discover") renderDeck();
     }).catch(()=>{ /* backend unreachable — Discover just stays mock-only */ });
   }
@@ -697,6 +730,9 @@
     state.ob.photos = (profile.photos && profile.photos.length) ? profile.photos : [null,null,null];
     state.ob.photoUri = profile.photos && profile.photos[0];
     state.ob.loc = profile.location_mode || "live";
+    state.ob.gender = profile.gender || "woman";
+    state.ob.lookingFor = profile.looking_for || [];
+    state.filters.genders = profile.looking_for || [];
     state.idVerified = !!profile.id_verified;
     state.ageVerified = !!profile.age_verified;
     state.isAdmin = !!profile.is_admin;
@@ -773,6 +809,7 @@
       username: "Ciara Doyle",
       bio: "Sea swims, bad puns, and an unreasonable number of houseplants.",
       reasons: ["Dinner dates", "Long term"],
+      gender: "woman", lookingFor: ["man"],
       ageVerified: true,
       idVerified: false,
       seedMatchId: 4, // Jordan
@@ -782,6 +819,7 @@
       username: "Darragh Kelly",
       bio: "Five-a-side on Tuesdays, terrible at cooking, great at ordering takeaway.",
       reasons: ["No strings fun", "Video chat fun"],
+      gender: "man", lookingFor: ["woman"],
       ageVerified: false,
       idVerified: true,
       seedMatchId: 1, // Aoife
@@ -811,9 +849,14 @@
     state.ob.loc = "fixed";
     state.ob.social1 = "";
     state.ob.social2 = "";
+    state.ob.gender = account.gender;
+    state.ob.lookingFor = [...account.lookingFor];
+    state.filters.genders = [...account.lookingFor];
     state.ageVerified = account.ageVerified;
     state.idVerified = account.idVerified;
     seedDemoMatch(PROFILES.find(p=>p.id===account.seedMatchId), `Hey ${account.username.split(" ")[0]}! Great to match with you 🎉`);
+    state.deck = buildDiscoverDeck(state.filters.genders);
+    state.deckIndex = 0;
     toast(`Logged in as ${account.username} (demo account).`);
     showScreen("discover");
   });
@@ -957,7 +1000,7 @@
   ];
   AVATAR_PARAMS[104] = { bg:"#eafff5", skin:"#e8b892", hair:"#2c1c12", style:"curly", top:"#0ca678" };
   AVATAR_PARAMS[105] = { bg:"#fff5e6", skin:"#f0c8a0", hair:"#141110", style:"short", top:"#f08c00" };
-  LIKE_DRIP_POOL.forEach(p => { p.photos = personSVGSet(AVATAR_PARAMS[p.id]); p.photoUri = p.photos[0]; p.lastActiveMins = 2; });
+  LIKE_DRIP_POOL.forEach(p => { p.photos = personSVGSet(AVATAR_PARAMS[p.id]); p.photoUri = p.photos[0]; p.lastActiveMins = 2; p.gender = GENDER_MAP[p.id]; });
 
   function maybeDripNewLike(){
     if(state.swipesUsed % 4 !== 0 || LIKE_DRIP_POOL.length === 0) return;
@@ -1600,11 +1643,26 @@
     if(!chip) return;
     chip.classList.toggle("is-selected");
   });
+  $("#filterGenderChips").addEventListener("click", e=>{
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    chip.classList.toggle("is-selected");
+    const g = chip.dataset.gender;
+    if(chip.classList.contains("is-selected")) state.filters.genders.push(g);
+    else state.filters.genders = state.filters.genders.filter(x=>x!==g);
+  });
+  $("#applyFiltersBtn").addEventListener("click", ()=>{
+    state.deck = buildDiscoverDeck(state.filters.genders);
+    state.deckIndex = 0;
+    toast(state.filters.genders.length ? `Showing: ${state.filters.genders.join(", ")}` : "Showing everyone");
+  });
   $("#resetFilters").addEventListener("click", ()=>{
     $("#rangeDistance").value = 50; $("#distanceVal").textContent = 50;
     $("#rangeAgeMin").value = 18; $("#ageMinVal").textContent = 18;
     $("#rangeAgeMax").value = 45; $("#ageMaxVal").textContent = 45;
     $$("#filterReasonChips .chip").forEach(c=>c.classList.remove("is-selected"));
+    $$("#filterGenderChips .chip").forEach(c=>c.classList.remove("is-selected"));
+    state.filters.genders = [];
     $("#show18Toggle").checked = false;
     $("#verifiedOnlyToggle").checked = true;
     updateFilterSummary();
