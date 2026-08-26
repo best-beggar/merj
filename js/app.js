@@ -123,6 +123,8 @@
     if(a){ p.photos = personSVGSet(a); p.photoUri = p.photos[0]; }
     p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
     p.gender = GENDER_MAP[p.id];
+    // Demo content for the two mock personas that already opt into the 18+ extension.
+    if(p.has18) p.ext18Photos = personSVGSet({ ...a, top: shiftHex(a.top, -40) });
   });
   LIKES_RECEIVED.forEach(p => {
     const a = AVATAR_PARAMS[p.id];
@@ -130,6 +132,67 @@
     p.lastActiveMins = LAST_ACTIVE_MINS[p.id] ?? 0;
     p.gender = GENDER_MAP[p.id];
   });
+
+  /* ---------------- Extra dummy test personas ----------------
+     10 women + 10 men for populating Discover and for logging in as a test account (see
+     DEMO_ACCOUNTS below — username is the lowercase first name, password "testtest99" for all).
+     No real accounts are created anywhere here -- this is the same client-side-only demo login
+     shim as female1/male1, just extended to 20 personas. Illustrated avatars only, per the
+     no-real-photos rule -- there's no image-gen tool wired into this app to produce real "AI
+     photos", so these reuse the same generated-SVG system with varied palettes for visual variety. */
+  const EXTRA_FEMALE_NAMES = ["Aoibhinn","Saoirse","Grainne","Roisin","Sinead","Aine","Orla","Clodagh","Fiadh","Laoise"];
+  const EXTRA_MALE_NAMES   = ["Cormac","Ruairi","Oisin","Fionn","Tadhg","Diarmuid","Padraig","Seamus","Eoin","Conor"];
+  const EXTRA_BIOS = [
+    "Beach walks, bad karaoke, good coffee.",
+    "Here for genuine conversation, not games.",
+    "Weekend hiker, weekday desk jockey.",
+    "Ask me about the marathon I regretted.",
+    "Homemade pasta enthusiast, professional plant-killer.",
+    "Into live music and terrible puns.",
+    "Dog person, occasionally a cat person.",
+    "Trying every coffee shop in town, one at a time.",
+    "Board games beat bar crawls, fight me.",
+    "Slow mornings, good books, better company.",
+  ];
+  const EXTRA_PALETTE = [
+    { bg:"#ffe3ec", skin:"#f2c9a4", hair:"#4b2e1d", top:"#d6538c" },
+    { bg:"#e6f0ff", skin:"#e3a978", hair:"#1c1c1c", top:"#4c6ef5" },
+    { bg:"#fff1e0", skin:"#c98a5b", hair:"#14110f", top:"#ff922b" },
+    { bg:"#e6f7ef", skin:"#e8b892", hair:"#6b4423", top:"#37b24d" },
+    { bg:"#f3e8ff", skin:"#f4d3b0", hair:"#a13d63", top:"#9b5cff" },
+    { bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", top:"#495057" },
+    { bg:"#ffe8e8", skin:"#f0c8a0", hair:"#2e1a0f", top:"#ff6b6b" },
+    { bg:"#e3fbf3", skin:"#c98a5b", hair:"#17110c", top:"#12b886" },
+    { bg:"#fef6e0", skin:"#e8b892", hair:"#3a2317", top:"#f4a72a" },
+    { bg:"#eef4ff", skin:"#caa06f", hair:"#241f1c", top:"#5c7cfa" },
+  ];
+  const FEMALE_HAIR_STYLES = ["long","curly","bun"];
+  const MALE_HAIR_STYLES = ["short","beard","curly"];
+  const DUMMY_ACCOUNTS = {};
+  function makeDummyPersona(name, id, gender, i){
+    const palette = EXTRA_PALETTE[i % EXTRA_PALETTE.length];
+    const styles = gender === "woman" ? FEMALE_HAIR_STYLES : MALE_HAIR_STYLES;
+    const avatar = { ...palette, style: styles[i % styles.length] };
+    const reasons = [REASON_OPTIONS[i % REASON_OPTIONS.length], REASON_OPTIONS[(i+2) % REASON_OPTIONS.length]];
+    const profile = {
+      id, name, age: 22 + (i * 2) % 20, distance: 1 + (i * 3) % 25, initial: name[0].toUpperCase(),
+      verified: i % 3 !== 0, reasons, bio: EXTRA_BIOS[i % EXTRA_BIOS.length], has18: false,
+      interests: ["music","travel","food"], gender,
+      declaredCountry:"IE", ipCountry:"IE", phoneCountry:"IE",
+      aiPhotoSuspected: false, duplicateImageFlag: false, accountAgeDays: 30 + i, likeRatio: 0.25 + (i % 5) * 0.03,
+      photos: personSVGSet(avatar),
+    };
+    profile.photoUri = profile.photos[0];
+    profile.lastActiveMins = (i % 6) * 25;
+    PROFILES.push(profile);
+    DUMMY_ACCOUNTS[name.toLowerCase()] = {
+      password: "testtest99", username: name, bio: profile.bio, reasons,
+      gender, lookingFor: gender === "woman" ? ["man"] : ["woman"],
+      ageVerified: false, idVerified: false, seedMatchId: null, avatarParams: avatar,
+    };
+  }
+  EXTRA_FEMALE_NAMES.forEach((name, i) => makeDummyPersona(name, 300 + i, "woman", i));
+  EXTRA_MALE_NAMES.forEach((name, i) => makeDummyPersona(name, 320 + i, "man", i));
 
   const ONLINE_MINS = 10, STALE_DAYS = 14, HIDDEN_DAYS = 60;
   const isOnline = p => p.lastActiveMins <= ONLINE_MINS;
@@ -184,6 +247,9 @@
     idVerified: false,
     ageVerified: false,
     ext18Mode: "off",
+    ext18Photos: [],
+    ext18Requested: new Set(),
+    ext18Granted: new Set(),
     filters: { distance:50, ageMin:18, ageMax:45, reasons:[], genders:[], show18:false, verifiedOnly:true, sort:["proximity","age","interests"] },
     myCountry: "IE",
     visibility: "public",
@@ -364,7 +430,7 @@
     }
     if(step === 3){
       const count = state.ob.photos.filter(Boolean).length;
-      if(count < 3) return "Add at least 3 photos to continue.";
+      if(count < 1) return "Add at least 1 photo to continue.";
     }
     if(step === 4){
       if(state.ob.reasons.length === 0) return "Pick at least one reason so we can match you well.";
@@ -565,7 +631,7 @@
       grid.appendChild(slot);
     }
     const count = state.ob.photos.filter(Boolean).length;
-    $("#photoCount").textContent = `${count} of 3 minimum added`;
+    $("#photoCount").textContent = `${count} of 1 minimum added`;
   }
 
   function onPhotoSelected(e){
@@ -583,7 +649,7 @@
         if(badge) badge.textContent = "✓ Passed nudity check";
       }, 700);
       const count = state.ob.photos.filter(Boolean).length;
-      $("#photoCount").textContent = `${count} of 3 minimum added`;
+      $("#photoCount").textContent = `${count} of 1 minimum added`;
       saveOnboardingDraft();
     }).catch(()=>{
       toast("Couldn't process that photo — try again.");
@@ -921,12 +987,12 @@
   $("#loginBtn").addEventListener("click", ()=>{
     const u = $("#loginUsername").value.trim().toLowerCase();
     const p = $("#loginPassword").value;
-    const account = DEMO_ACCOUNTS[u];
+    const account = DEMO_ACCOUNTS[u] || DUMMY_ACCOUNTS[u];
     if(!account || account.password !== p){
-      toast("Invalid demo login. Try female1/femtest or male1/maletest.");
+      toast("Invalid demo login. Try female1/femtest, male1/maletest, or any dummy account (e.g. saoirse/testtest99).");
       return;
     }
-    const photoUri = personSVG(AVATAR_PARAMS[u]);
+    const photoUri = personSVG(account.avatarParams || AVATAR_PARAMS[u]);
     state.ob.username = account.username;
     state.ob.bio = account.bio;
     state.ob.reasons = [...account.reasons];
@@ -1357,6 +1423,9 @@
       .then(peer=>{
         $("#roomCodeDisplay").value = peer.id;
         state.rtc.roomCode = peer.id;
+        if(navigator.clipboard){
+          navigator.clipboard.writeText(peer.id).then(()=> toast("Connection code copied — send it to them to connect."));
+        }
       })
       .catch(err=>{
         toast("Couldn't start the call: " + err.message);
@@ -1683,6 +1752,8 @@
     $("#ext18Choices").style.opacity = state.ageVerified ? "1" : "0.4";
     $("#ext18Choices").style.pointerEvents = state.ageVerified ? "auto" : "none";
     $$('.choice-card[data-vis]').forEach(c=> c.classList.toggle("is-selected", c.dataset.vis === state.ext18Mode));
+    $("#ext18UploadBox").hidden = !(state.ageVerified && state.ext18Mode !== "off");
+    if(state.ageVerified && state.ext18Mode !== "off") renderExt18UploadGrid();
 
     const chips = $("#profileReasonChips");
     chips.innerHTML = (state.ob.reasons.length ? state.ob.reasons : ["Not set yet"]).map(r=>`<span class="chip is-selected">${r}</span>`).join("");
@@ -1713,6 +1784,85 @@
     state.ext18Mode = card.dataset.vis;
     renderProfile();
     toast(`18+ extension set to "${card.textContent.trim()}"`);
+  });
+
+  function renderExt18UploadGrid(){
+    const grid = $("#ext18PhotoGrid");
+    grid.innerHTML = "";
+    for(let i=0;i<3;i++){
+      const slot = document.createElement("label");
+      const existing = state.ext18Photos[i];
+      slot.className = "photo-slot" + (existing ? " has-photo" : "");
+      slot.innerHTML = existing
+        ? `<img src="${existing}" alt="18+ photo ${i+1}"><input type="file" accept="image/*" data-idx="${i}">`
+        : `<span>📷<br>Add</span><input type="file" accept="image/*" data-idx="${i}">`;
+      grid.appendChild(slot);
+    }
+  }
+  $("#ext18PhotoGrid").addEventListener("change", (e)=>{
+    const input = e.target.closest('input[type=file]');
+    if(!input || !input.files[0]) return;
+    const idx = Number(input.dataset.idx);
+    resizeImageFile(input.files[0], 900, 0.82).then(dataUrl=>{
+      state.ext18Photos[idx] = dataUrl;
+      renderExt18UploadGrid();
+      toast("Added — queued for the same review process as your other photos.");
+    }).catch(()=> toast("Couldn't process that photo — try again."));
+  });
+
+  /* ---------------- 18+ section: viewing someone else's ---------------- */
+  function renderExt18Section(p){
+    const section = $("#detail18Section");
+    if(!p.has18 || !p.ext18Mode || p.ext18Mode === "off"){ section.hidden = true; return; }
+    section.hidden = false;
+    const locked = $("#detail18Locked");
+    const gallery = $("#detail18Photos");
+    const requestBtn = $("#detail18RequestBtn");
+    if(!state.ageVerified){
+      locked.hidden = false; gallery.hidden = true;
+      $("#detail18LockedText").textContent = "Verify your age to view 18+ content.";
+      requestBtn.textContent = "Verify age";
+      requestBtn.disabled = false;
+      return;
+    }
+    const granted = p.ext18Mode === "open" || state.ext18Granted.has(p.id);
+    if(granted){
+      locked.hidden = true;
+      gallery.hidden = false;
+      gallery.innerHTML = (p.ext18Photos && p.ext18Photos.length)
+        ? p.ext18Photos.map((src,i)=>`<div class="photo-slot has-photo"><img src="${src}" alt="18+ photo ${i+1}"></div>`).join("")
+        : `<p class="muted-sm">This person hasn't added any 18+ content yet.</p>`;
+    } else {
+      gallery.hidden = true;
+      locked.hidden = false;
+      const pending = state.ext18Requested.has(p.id);
+      $("#detail18LockedText").textContent = pending
+        ? "Request sent — waiting for them to approve."
+        : "This section is request-only. Ask for access?";
+      requestBtn.textContent = pending ? "Requested" : "Request access";
+      requestBtn.disabled = pending;
+    }
+  }
+  $("#detail18RequestBtn").addEventListener("click", ()=>{
+    const p = state.detailProfile;
+    if(!p) return;
+    if(!state.ageVerified){
+      showInfo("Prototype: this would run the same on-device age check as Profile → Age verification.");
+      state.ageVerified = true;
+      renderExt18Section(p);
+      return;
+    }
+    if(state.ext18Requested.has(p.id)) return;
+    state.ext18Requested.add(p.id);
+    renderExt18Section(p);
+    toast(`Access requested from ${p.name}.`);
+    // Demo-only: mock/dummy profiles auto-approve after a short delay so the request → grant
+    // flow is visible end-to-end without a real per-user approval backend yet.
+    setTimeout(()=>{
+      state.ext18Granted.add(p.id);
+      toast(`${p.name} approved your request.`);
+      if(state.detailProfile && state.detailProfile.id === p.id) renderExt18Section(p);
+    }, 2200);
   });
 
   /* ---------------- Filters ---------------- */
@@ -1748,6 +1898,11 @@
     state.deck = buildDiscoverDeck(state.filters.genders);
     state.deckIndex = 0;
     toast(state.filters.genders.length ? `Showing: ${state.filters.genders.join(", ")}` : "Showing everyone");
+  });
+  $("#seeEveryoneAgainBtn").addEventListener("click", ()=>{
+    state.deckIndex = 0;
+    renderDeck();
+    toast("Back to the top — showing everyone again.");
   });
   $("#resetFilters").addEventListener("click", ()=>{
     $("#rangeDistance").value = 50; $("#distanceVal").textContent = 50;
@@ -2053,6 +2208,7 @@
     $("#detailTags").innerHTML = (p.reasons || []).map(r => `<span class="tag">${r}</span>`).join("");
     $("#detailBio").textContent = p.bio || "";
     $("#detailVerifiedRow").innerHTML = p.verified ? `<div class="card-verified">✓ Phone verified</div>` : "";
+    renderExt18Section(p);
 
     const msgBtn = $("#detailMessageBtn");
     const unmatchBtn = $("#detailUnmatchBtn");

@@ -111,7 +111,7 @@
           <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
         </label>
         <button class="btn btn--outline btn--block" id="loginBtn">Log in as demo account</button>
-        <p class="muted-sm" style="text-align:center;">Demo accounts: <strong>female1 / femtest</strong> and <strong>male1 / maletest</strong></p>
+        <p class="muted-sm" style="text-align:center;">Stakeholder demos: <strong>female1 / femtest</strong> and <strong>male1 / maletest</strong>.<br>Plus 20 dummy test accounts — first name (lowercase) / <strong>testtest99</strong>, e.g. <strong>saoirse / testtest99</strong>.</p>
       </div>
     </div>
   </section>
@@ -233,12 +233,12 @@
 
       <!-- Step 3: photos -->
       <div class="ob-step" data-step="3">
-        <h2>Add at least 3 photos</h2>
-        <p class="muted">Every photo is auto-screened for nudity before it's visible to anyone. Flagged photos get a fast human review — you'll be notified either way.</p>
+        <h2>Add at least 1 photo</h2>
+        <p class="muted">Every photo is auto-screened for nudity before it's visible to anyone. Flagged photos get a fast human review — you'll be notified either way. Add 2 more later for the best results.</p>
         <div class="photo-grid" id="photoGrid">
           <!-- populated by JS -->
         </div>
-        <span class="field-hint" id="photoCount">0 of 3 minimum added</span>
+        <span class="field-hint" id="photoCount">0 of 1 minimum added</span>
       </div>
 
       <!-- Step 4: reasons -->
@@ -315,8 +315,9 @@
       <div class="deck-empty" id="deckEmpty" hidden>
         <div class="deck-empty-icon">🌍</div>
         <h3>You've seen everyone nearby</h3>
-        <p class="muted">Try widening your distance filter, or check back later.</p>
-        <button class="btn btn--primary" data-nav="filters">Adjust filters</button>
+        <p class="muted">Try widening your distance filter, or start over from the top.</p>
+        <button class="btn btn--primary" id="seeEveryoneAgainBtn">See everyone again</button>
+        <button class="btn btn--ghost" data-nav="filters">Adjust filters</button>
       </div>
       <div class="deck-outofswipes" id="deckOut" hidden>
         <div class="deck-empty-icon">🎬</div>
@@ -560,6 +561,10 @@
         <div class="locked-panel" id="ext18Locked">
           <div class="lock-icon">🔒</div>
           <p>Verify your age to enable this section.</p>
+        </div>
+        <div id="ext18UploadBox" hidden>
+          <p class="muted-sm">Visible to whoever your access setting above allows. Every photo still goes through the same review queue as your main photos — this section allows nudity, it doesn't allow anything non-consensual or illegal.</p>
+          <div class="photo-grid" id="ext18PhotoGrid"></div>
         </div>
       </div>
 
@@ -863,6 +868,15 @@
       <div class="card-tags" id="detailTags"></div>
       <p class="card-bio" id="detailBio"></p>
       <div id="detailVerifiedRow"></div>
+      <div class="panel-section" id="detail18Section" hidden>
+        <h4>🔞 18+ extension</h4>
+        <div class="locked-panel" id="detail18Locked">
+          <div class="lock-icon">🔒</div>
+          <p id="detail18LockedText">This section is request-only. Ask for access?</p>
+          <button class="btn btn--outline btn--sm" id="detail18RequestBtn">Request access</button>
+        </div>
+        <div class="photo-grid" id="detail18Photos" hidden></div>
+      </div>
       <div class="detail-actions">
         <button class="btn btn--outline" id="detailUnmatchBtn" hidden>Unmatch</button>
         <button class="btn btn--primary" id="detailMessageBtn">Message</button>
@@ -900,15 +914,16 @@
     </div>
 
     <div class="call-room-box" id="callRoomBox">
-      <label class="field">Your room code
+      <p class="muted-sm" style="margin:0 0 8px;">Connection code — copied automatically, just send it however you're already talking to them.</p>
+      <label class="field">
         <input type="text" id="roomCodeDisplay" readonly placeholder="generating…">
       </label>
       <div class="ob-nav">
-        <button class="btn btn--ghost btn--sm" id="copyRoomBtn">Copy code</button>
+        <button class="btn btn--ghost btn--sm" id="copyRoomBtn">Copy again</button>
         <button class="btn btn--ghost btn--sm" id="openOtherSideBtn">Open other side (test in new tab)</button>
       </div>
-      <label class="field">Or connect to a code you were given
-        <input type="text" id="joinCodeInput" placeholder="paste a room code">
+      <label class="field">Got a code from them instead? Paste it here
+        <input type="text" id="joinCodeInput" placeholder="paste their code">
       </label>
       <button class="btn btn--primary btn--sm btn--block" id="joinRoomBtn">Connect</button>
     </div>
@@ -965,6 +980,6 @@
 <script src="js/supabase-config.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="js/app.js?v=19"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>
