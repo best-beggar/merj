@@ -253,7 +253,7 @@
   const state = {
     screen: "landing",
     prevScreen: "discover",
-    ob: { step:1, totalSteps:5, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false, gender:"woman", lookingFor:[] },
+    ob: { step:1, totalSteps:5, loc:"live", photos:[null,null,null], reasons:[], username:"", contacts:false, guestUpgradeMode:false, resumingAccount:false, gender:"woman", lookingFor:[] },
     guestMode: false,
     guestSwipeCount: 0,
     guestGateTriggered: false,
@@ -424,7 +424,7 @@
     $("#obProgress").style.width = Math.round((state.ob.step/state.ob.totalSteps)*100) + "%";
     $("#obBack").style.visibility = state.ob.step === 1 ? "hidden" : "visible";
     $("#obNext").textContent = state.ob.step === state.ob.totalSteps ? "Enter Merj" : "Continue";
-    $("#obPasswordField").hidden = !!state.ob.googleAuthed;
+    $("#obPasswordField").hidden = !!(state.ob.googleAuthed || state.ob.resumingAccount);
     // Guests upgrading mid-swipe, and Google sign-ins (already identity-verified), only need
     // step 1's essentials (DOB is a legal 18+ gate Google can't hand us, gender/who-you're-into
     // is required) -- photos/reasons/extras can be skipped and finished later from the profile.
@@ -443,7 +443,7 @@
       // Google sign-ins are already identity-verified by Google -- phone becomes optional profile
       // data rather than the verification mechanism, so it's not required to continue.
       if(!state.ob.googleAuthed && !$("#obPhone").value.trim()) return "Phone number is required — it's how we verify you.";
-      if(!state.ob.googleAuthed && $("#obPassword").value.length < 6) return "Password must be at least 6 characters.";
+      if(!state.ob.googleAuthed && !state.ob.resumingAccount && $("#obPassword").value.length < 6) return "Password must be at least 6 characters.";
       const dob = $("#obDob").value;
       if(!dob) return "Date of birth is required.";
       const age = ageFromDob(dob);
@@ -479,7 +479,7 @@
       state.ob.step++;
       updateOnboardUI();
       saveOnboardingDraft();
-    } else if(state.ob.googleAuthed){
+    } else if(state.ob.googleAuthed || state.ob.resumingAccount){
       completeOnboarding(state.realUserId);
     } else {
       signUpWithPassword();
@@ -727,7 +727,9 @@
     state.ob.social1 = $("#obSocial1").value.trim();
     state.ob.social2 = $("#obSocial2").value.trim();
     state.ob.contacts = $("#obContacts").checked;
-    try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
+    // The draft is only cleared once the backend save actually succeeds (below) -- if it fails,
+    // the draft survives so restoreRealSessionIfAny() can silently retry it on next load instead
+    // of the account being stuck authenticated with no profile row and no way back in.
     const wasGuestUpgrade = state.ob.guestUpgradeMode;
     state.ob.guestUpgradeMode = false;
 
@@ -772,16 +774,17 @@
     }).then(({ error })=>{
       if(error){
         console.error("profile upsert error", error);
-        toast("Verified, but saving your profile to the backend failed — you can keep going locally for now.");
+        showInfo(`Your profile didn't save to the backend (${error.message || "unknown error"}). You'll still be dropped into Discover for now, but this will happen again on your next reload until it's fixed — worth reporting.`);
       } else {
         toast("Your profile is saved to the real backend.");
         loadRealProfiles();
         loadRealMatches();
+        try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
       }
       finish();
     }).catch(err=>{
       console.error(err);
-      toast("Verified, but the backend save failed — check the schema has been run.");
+      showInfo(`Your profile didn't save to the backend (${(err && err.message) || "connection error"}). You'll still be dropped into Discover for now, but this will happen again on your next reload until it's fixed — worth reporting.`);
       finish();
     });
   }
@@ -874,15 +877,38 @@
       state.realUserId = session.user.id;
       sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
         if(error || !profile){
-          // Signed in via Google but no profile row yet -- just the 3 essentials, then a choice.
-          const meta = session.user.user_metadata || {};
-          state.ob.googleAuthed = true;
-          state.ob.username = meta.full_name || meta.name || "Merj user";
-          $("#obEmail").value = session.user.email || "";
-          $("#obEmail").disabled = true;
-          $("#obUsername").value = state.ob.username;
-          $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
-          showScreen("googleQuickStart");
+          // An authenticated user with no profile row almost always means a previous signup's
+          // backend save failed silently (see completeOnboarding) -- if that attempt's draft
+          // survived (it's only cleared on success), retry it transparently before bothering
+          // the user with anything at all.
+          let draft = null;
+          try{ draft = JSON.parse(sessionStorage.getItem(OB_DRAFT_KEY) || "null"); }catch(e){}
+          if(draft && draft.username){
+            restoreOnboardingDraftIfAny();
+            completeOnboarding(session.user.id);
+            return;
+          }
+          const isGoogle = session.user.app_metadata && session.user.app_metadata.provider === "google";
+          if(isGoogle){
+            // Signed in via Google but no profile row yet -- just the 3 essentials, then a choice.
+            const meta = session.user.user_metadata || {};
+            state.ob.googleAuthed = true;
+            state.ob.username = meta.full_name || meta.name || "Merj user";
+            $("#obEmail").value = session.user.email || "";
+            $("#obEmail").disabled = true;
+            $("#obUsername").value = state.ob.username;
+            $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
+            showScreen("googleQuickStart");
+          } else {
+            // Password account exists but its profile never saved and there's no local draft
+            // left to retry with -- have them re-enter it. They already have an account, so
+            // skip the password step and save straight to their existing user id.
+            state.ob.resumingAccount = true;
+            $("#obEmail").value = session.user.email || "";
+            $("#obEmail").disabled = true;
+            showScreen("onboarding");
+            toast("Your last signup didn't finish saving — let's get your profile in.");
+          }
           return;
         }
         hydrateStateFromProfile(profile);
