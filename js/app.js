@@ -215,6 +215,29 @@
   // dropped -- otherwise "Aoife"/"Jordan"/etc. would appear twice. Sam/Priya/Cian are pure
   // local-only trust-engine demo profiles (the seeded red-flag examples) and always stay.
   const SEEDED_MOCK_IDS = new Set([1, 4, 5, 7, 8]);
+  // Maps those same 5 seeded mock ids to the fixed UUIDs sql/001_schema.sql inserted them
+  // under -- this is what lets liking/matching with a curated persona actually persist for
+  // real (the row exists), the same as liking a genuine signup.
+  const SEED_UUID_MAP = {
+    1: "00000000-0000-0000-0000-000000000001",
+    4: "00000000-0000-0000-0000-000000000004",
+    5: "00000000-0000-0000-0000-000000000005",
+    7: "00000000-0000-0000-0000-000000000007",
+    8: "00000000-0000-0000-0000-000000000008",
+  };
+  // Returns the real profiles.id (uuid) backing a deck profile, or null if it's a purely
+  // local mock (Sam/Priya/Cian/the dummy test personas) with no row to like/match against.
+  function realIdOf(profile){
+    if(!profile) return null;
+    if(typeof profile.id === "string" && profile.id.startsWith("real-")) return profile.id.slice(5);
+    return SEED_UUID_MAP[profile.id] || null;
+  }
+  function findProfileByRealId(uuid){
+    const real = REAL_PROFILES.find(p => p.id === "real-" + uuid);
+    if(real) return real;
+    const seedLocalId = Object.keys(SEED_UUID_MAP).find(k => SEED_UUID_MAP[k] === uuid);
+    return seedLocalId ? PROFILES.find(p => p.id === Number(seedLocalId)) : null;
+  }
   // genderFilter is passed explicitly rather than read from `state` here, since this function
   // is also called once during state's own initialization (before the `state` binding exists).
   function buildDiscoverDeck(genderFilter){
@@ -244,6 +267,8 @@
     matches: [],
     chats: {},
     activeChatId: null,
+    matchesChannel: null,
+    messageChannels: {},
     idVerified: false,
     ageVerified: false,
     ext18Mode: "off",
@@ -751,6 +776,7 @@
       } else {
         toast("Your profile is saved to the real backend.");
         loadRealProfiles();
+        loadRealMatches();
       }
       finish();
     }).catch(err=>{
@@ -758,6 +784,30 @@
       toast("Verified, but the backend save failed — check the schema has been run.");
       finish();
     });
+  }
+
+  // Shared row -> deck-profile shape, used both for the bulk Discover fetch and for looking
+  // up a single match partner's profile on demand.
+  function mapRowToProfile(row){
+    return {
+      id: "real-" + row.id,
+      name: row.username,
+      age: row.age || 25,
+      distance: Math.floor(1 + Math.random()*20),
+      initial: (row.username || "?")[0].toUpperCase(),
+      verified: !!row.phone_verified,
+      reasons: row.reasons || [],
+      bio: row.bio || "",
+      has18: row.ext18_mode && row.ext18_mode !== "off",
+      ext18Mode: row.ext18_mode,
+      interests: row.interests || [],
+      photos: (row.photos && row.photos.length) ? row.photos : undefined,
+      photoUri: (row.photos && row.photos.length) ? row.photos[0] : personSVG({ bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", style:"short", top:"#495057" }),
+      lastActiveMins: row.last_active_at ? Math.max(0, Math.round((Date.now() - new Date(row.last_active_at).getTime())/60000)) : 0,
+      declaredCountry: row.declared_country, ipCountry: row.declared_country, phoneCountry: row.declared_country,
+      gender: row.gender,
+      aiPhotoSuspected: false, duplicateImageFlag: false, accountAgeDays: 1, likeRatio: 0.3,
+    };
   }
 
   // Pulls real signed-up profiles into Discover alongside the curated demo personas. Falls back
@@ -769,29 +819,20 @@
       REAL_PROFILES.length = 0;
       data.forEach(row=>{
         if(row.id === state.realUserId) return; // never show yourself in your own deck
-        REAL_PROFILES.push({
-          id: "real-" + row.id,
-          name: row.username,
-          age: row.age || 25,
-          distance: Math.floor(1 + Math.random()*20),
-          initial: (row.username || "?")[0].toUpperCase(),
-          verified: !!row.phone_verified,
-          reasons: row.reasons || [],
-          bio: row.bio || "",
-          has18: row.ext18_mode && row.ext18_mode !== "off",
-          ext18Mode: row.ext18_mode,
-          interests: row.interests || [],
-          photos: (row.photos && row.photos.length) ? row.photos : undefined,
-          photoUri: (row.photos && row.photos.length) ? row.photos[0] : personSVG({ bg:"#eef1f3", skin:"#e3a978", hair:"#2b2b2b", style:"short", top:"#495057" }),
-          lastActiveMins: row.last_active_at ? Math.max(0, Math.round((Date.now() - new Date(row.last_active_at).getTime())/60000)) : 0,
-          declaredCountry: row.declared_country, ipCountry: row.declared_country, phoneCountry: row.declared_country,
-          gender: row.gender,
-          aiPhotoSuspected: false, duplicateImageFlag: false, accountAgeDays: 1, likeRatio: 0.3,
-        });
+        REAL_PROFILES.push(mapRowToProfile(row));
       });
       state.deck = buildDiscoverDeck(state.filters.genders);
       if(state.screen === "discover") renderDeck();
     }).catch(()=>{ /* backend unreachable — Discover just stays mock-only */ });
+  }
+
+  // Looks up one profile by real id -- used when a match/message arrives for someone not
+  // already in the local REAL_PROFILES cache (e.g. they signed up after our last Discover fetch).
+  function fetchProfileById(uuid){
+    if(!sb) return Promise.resolve(null);
+    return sb.from("profiles").select("*").eq("id", uuid).single().then(({ data, error })=>{
+      return (error || !data) ? null : mapRowToProfile(data);
+    }).catch(()=> null);
   }
 
   // Affiliate referral capture: ?ref=CODE on any landing visit is remembered locally and
@@ -845,6 +886,7 @@
           return;
         }
         hydrateStateFromProfile(profile);
+        loadRealMatches();
       }).catch(()=>{});
     }).catch(()=>{});
   }
@@ -947,6 +989,7 @@
         hydrateStateFromProfile(profile);
         toast(`Welcome back, ${profile.username}!`);
         loadRealProfiles();
+        loadRealMatches();
         showScreen("discover");
       });
     });
@@ -1132,8 +1175,13 @@
       card.style.opacity = "0";
     }
     if(action === "like"){
-      const isMatch = Math.random() < 0.45;
-      if(isMatch) createMatch(profile);
+      const realId = realIdOf(profile);
+      if(state.realUserId && realId){
+        likeRealProfile(profile, realId);
+      } else {
+        const isMatch = Math.random() < 0.45;
+        if(isMatch) createMatch(profile);
+      }
     }
     maybeDripNewLike();
     if(state.guestMode){
@@ -1236,12 +1284,27 @@
   });
 
   /* ---------------- Matching + chat ---------------- */
-  function createMatch(profile){
+  // opts.realMatchId: this match is backed by a real `matches` row -- chat reads/writes the
+  // real `messages` table instead of local mock state. opts.silent: skip the "it's a match!"
+  // popup, used when hydrating matches that already existed before this session started.
+  function createMatch(profile, opts){
+    opts = opts || {};
     if(state.matches.find(m=>m.id===profile.id)) return;
+    profile.realMatchId = opts.realMatchId || null;
     state.matches.unshift(profile);
-    state.chats[profile.id] = [
-      { from:"them", text:`Hey ${state.ob.username || "there"}! We matched 🎉` , system:false}
-    ];
+    if(opts.realMatchId){
+      state.chats[profile.id] = [];
+      fetchMessagesForMatch(opts.realMatchId, profile.id);
+      subscribeToMatchMessages(opts.realMatchId, profile.id);
+    } else {
+      state.chats[profile.id] = [
+        { from:"them", text:`Hey ${state.ob.username || "there"}! We matched 🎉` , system:false}
+      ];
+    }
+    const badge = $("#matchBadge");
+    badge.hidden = false; badge.textContent = state.matches.length;
+    if(state.screen === "matches") renderMatches();
+    if(opts.silent) return;
     const meEl = $("#matchAvatarMe");
     if(state.ob.photoUri){ meEl.style.backgroundImage = `url('${state.ob.photoUri}')`; meEl.textContent = ""; }
     else { meEl.style.backgroundImage = ""; meEl.textContent = (state.ob.username||"Y")[0].toUpperCase(); }
@@ -1251,8 +1314,6 @@
     $("#matchText").textContent = `You and ${profile.name} both said yes.`;
     $("#matchOverlay").hidden = false;
     $("#matchOverlay")._profileId = profile.id;
-    const badge = $("#matchBadge");
-    badge.hidden = false; badge.textContent = state.matches.length;
     if(state.guestMode) state.pendingGuestGate = "You've got a match! Verify your phone or email to start chatting.";
   }
   $("#matchDismissBtn").addEventListener("click", ()=>{
@@ -1265,6 +1326,84 @@
     if(state.pendingGuestGate){ const reason = state.pendingGuestGate; state.pendingGuestGate = null; triggerGuestGate(reason); return; }
     openChat(id);
   });
+
+  /* ---------------- Real likes/matches (Supabase-backed) ----------------
+     Only reachable when both state.realUserId and the swiped profile's realIdOf() resolve --
+     i.e. a genuinely signed-up user liking another real (or seeded) profile. Guest mode, demo
+     stakeholder logins, and the local-only dummy personas never touch these tables; they keep
+     the original random-match simulation in resolveSwipe(). */
+  function likeRealProfile(profile, realId){
+    sb.from("likes").insert({ liker: state.realUserId, liked: realId }).then(({ error })=>{
+      if(error && error.code !== "23505") { console.error("like insert failed", error); return; } // 23505 = already liked, fine
+      checkForMutualMatch(profile, realId);
+    });
+  }
+  function checkForMutualMatch(profile, realId){
+    sb.from("likes").select("id").eq("liker", realId).eq("liked", state.realUserId).maybeSingle().then(({ data })=>{
+      if(data) createRealMatch(profile, realId);
+    });
+  }
+  function createRealMatch(profile, realId){
+    const me = state.realUserId;
+    sb.from("matches").select("id")
+      .or(`and(user_a.eq.${me},user_b.eq.${realId}),and(user_a.eq.${realId},user_b.eq.${me})`)
+      .maybeSingle().then(({ data: existing })=>{
+        if(existing){ createMatch(profile, { realMatchId: existing.id }); return; }
+        sb.from("matches").insert({ user_a: me, user_b: realId }).select().single().then(({ data, error })=>{
+          if(error){ console.error("match insert failed", error); return; }
+          createMatch(profile, { realMatchId: data.id });
+        });
+      });
+  }
+  // Loads matches that already existed before this session (silent -- no popup for old news),
+  // then subscribes so a match created by the OTHER side while we're online shows up live.
+  function loadRealMatches(){
+    if(!sb || !state.realUserId) return;
+    const me = state.realUserId;
+    sb.from("matches").select("*").or(`user_a.eq.${me},user_b.eq.${me}`).then(({ data, error })=>{
+      if(error || !data) return;
+      data.forEach(row => hydrateRealMatch(row, true));
+    });
+    subscribeToMyMatches();
+  }
+  function subscribeToMyMatches(){
+    if(state.matchesChannel) return;
+    const me = state.realUserId;
+    state.matchesChannel = sb.channel(`matches-${me}`)
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"matches", filter:`user_a=eq.${me}` }, p=> hydrateRealMatch(p.new, false))
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"matches", filter:`user_b=eq.${me}` }, p=> hydrateRealMatch(p.new, false))
+      .subscribe();
+  }
+  function hydrateRealMatch(row, silent){
+    if(state.matches.find(m => m.realMatchId === row.id)) return;
+    const me = state.realUserId;
+    const otherId = row.user_a === me ? row.user_b : row.user_a;
+    const local = findProfileByRealId(otherId);
+    if(local){ createMatch(local, { realMatchId: row.id, silent }); return; }
+    fetchProfileById(otherId).then(p => { if(p) createMatch(p, { realMatchId: row.id, silent }); });
+  }
+  function fetchMessagesForMatch(matchId, localId){
+    sb.from("messages").select("*").eq("match_id", matchId).order("created_at", { ascending: true }).then(({ data, error })=>{
+      if(error || !data) return;
+      state.chats[localId] = data.map(m => ({ from: m.sender === state.realUserId ? "me" : "them", text: m.body }));
+      if(state.activeChatId === localId) renderChatThread();
+      if(state.screen === "matches") renderMatches();
+    });
+  }
+  function subscribeToMatchMessages(matchId, localId){
+    if(state.messageChannels[matchId]) return;
+    state.messageChannels[matchId] = sb.channel(`messages-${matchId}`)
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"messages", filter:`match_id=eq.${matchId}` }, p=>{
+        const m = p.new;
+        if(m.sender === state.realUserId) return; // already shown optimistically when we sent it
+        state.chats[localId] = state.chats[localId] || [];
+        state.chats[localId].push({ from:"them", text: m.body });
+        if(state.activeChatId === localId) renderChatThread();
+        else { const who = state.matches.find(x=>x.id===localId); toast(`New message from ${who ? who.name : "a match"}`); }
+        if(state.screen === "matches") renderMatches();
+      })
+      .subscribe();
+  }
 
   function renderMatches(){
     const list = $("#matchesList");
@@ -1291,6 +1430,11 @@
   function unmatchProfile(id){
     const profile = state.matches.find(m=>m.id===id);
     if(!profile) return;
+    if(profile.realMatchId){
+      sb.from("matches").delete().eq("id", profile.realMatchId).then(()=>{});
+      const channel = state.messageChannels[profile.realMatchId];
+      if(channel){ sb.removeChannel(channel); delete state.messageChannels[profile.realMatchId]; }
+    }
     state.matches = state.matches.filter(m=>m.id!==id);
     delete state.chats[id];
     toast(`Unmatched from ${profile.name}.`);
@@ -1326,15 +1470,20 @@
     const input = $("#chatInput");
     const text = input.value.trim();
     if(!text || !state.activeChatId) return;
+    const profile = state.matches.find(m=>m.id===state.activeChatId);
     state.chats[state.activeChatId].push({from:"me", text});
     input.value = "";
     renderChatThread();
     renderMatches();
+    if(profile && profile.realMatchId){
+      sb.from("messages").insert({ match_id: profile.realMatchId, sender: state.realUserId, body: text })
+        .then(({ error })=>{ if(error) toast("Message failed to send — try again."); });
+      return;
+    }
     setTimeout(()=>{
-      const profile = state.matches.find(m=>m.id===state.activeChatId);
       const replies = ["Haha fair enough.","Tell me more!","I was just thinking the same thing.","😄 love that.","What are you up to this weekend?"];
       state.chats[state.activeChatId].push({from:"them", text: replies[Math.floor(Math.random()*replies.length)]});
-      if(state.activeChatId === profile.id) renderChatThread();
+      if(state.activeChatId === (profile && profile.id)) renderChatThread();
       renderMatches();
     }, 900 + Math.random()*900);
   }
