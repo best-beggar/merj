@@ -291,15 +291,20 @@
     callHistory: [],
     likesReceived: [...LIKES_RECEIVED],
     showOnlineStatus: true,
-    callPermission: "list",      // "everyone" | "list" | "nobody"
+    // Calls can only ever come from someone you've matched with (rings ride the match's own
+    // channel), so "everyone" means "any of my matches" -- and it's the default, because
+    // defaulting to the approve-list meant nobody could ever ring you until you'd manually
+    // ticked them, which made the whole call feature look broken.
+    callPermission: "everyone",  // "everyone" (any match) | "list" (approved only) | "nobody"
     approvedCallers: new Set(),  // names allowed to call regardless of callPermission
     callRequestLog: [],
     detailProfile: null,
     detailPhotoIndex: 0,
     detailContext: "deck",       // "deck" | "match" | "like"
-    rtc: { peer:null, call:null, localStream:null, roomCode:null, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null, activeCallProfileId:null, connected:false, isBlindDate:false, wasVideo:false },
+    rtc: { peer:null, call:null, localStream:null, hostPeer:null, ringTimeout:null, ringingMatchId:null, incoming:null, incomingTimeout:null, outgoingPending:false, generation:0, faceTimer:null, noFaceStrikes:0, countdownInterval:null, faceModelReady:false, skipFaceCheck:false, activeCallProfileName:null, activeCallProfileId:null, connected:false, isBlindDate:false, wasVideo:false },
     blindPeer: null,
     blindFiltersUnlocked: false,
+    authRouted: false,   // ensures the authed-user routing (restore/OAuth-return) runs exactly once
   };
 
   const $ = (sel, root) => (root||document).querySelector(sel);
@@ -428,11 +433,12 @@
     // Guests upgrading mid-swipe, and Google sign-ins (already identity-verified), only need
     // step 1's essentials (DOB is a legal 18+ gate Google can't hand us, gender/who-you're-into
     // is required) -- photos/reasons/extras can be skipped and finished later from the profile.
-    const canSkip = state.ob.guestUpgradeMode || state.ob.googleAuthed;
-    $("#obSkipRow").hidden = !(canSkip && state.ob.step > 1 && state.ob.step < state.ob.totalSteps);
+    // Skip is available to EVERYONE past step 1: step 1 holds the only legally/functionally
+    // required fields, so gating the skip behind special modes was pure conversion friction.
+    $("#obSkipRow").hidden = !(state.ob.step > 1 && state.ob.step < state.ob.totalSteps);
   }
   $("#obSkipBtn").addEventListener("click", ()=>{
-    if(state.ob.googleAuthed) completeOnboarding(state.realUserId);
+    if(state.ob.googleAuthed || state.ob.resumingAccount) completeOnboarding(state.realUserId);
     else signUpWithPassword();
   });
 
@@ -440,9 +446,9 @@
     if(step === 1){
       if(!$("#obUsername").value.trim()) return "Pick a username.";
       if(!/^\S+@\S+\.\S+$/.test($("#obEmail").value)) return "Enter a valid email.";
-      // Google sign-ins are already identity-verified by Google -- phone becomes optional profile
-      // data rather than the verification mechanism, so it's not required to continue.
-      if(!state.ob.googleAuthed && !$("#obPhone").value.trim()) return "Phone number is required — it's how we verify you.";
+      // Phone is optional for everyone: no SMS verification exists yet, so requiring it added
+      // signup friction without any real anti-spam value. It still counts toward profile
+      // completeness (= more daily swipes), which is the honest version of the incentive.
       if(!state.ob.googleAuthed && !state.ob.resumingAccount && $("#obPassword").value.length < 6) return "Password must be at least 6 characters.";
       const dob = $("#obDob").value;
       if(!dob) return "Date of birth is required.";
@@ -512,14 +518,19 @@
     const password = $("#obPassword").value;
     $("#obNext").disabled = true;
     $("#obNext").textContent = "Creating account…";
+    // Claim the auth-routing slot before signUp fires its SIGNED_IN event, so the generic
+    // route handler doesn't race this flow's own completeOnboarding with a duplicate one.
+    state.authRouted = true;
     sb.auth.signUp({ email, password }).then(({ data, error })=>{
       $("#obNext").disabled = false;
       $("#obNext").textContent = "Enter Merj";
       if(error){
+        state.authRouted = false;
         toast(error.message || "Couldn't create that account.");
         return;
       }
       if(!data.session){
+        state.authRouted = false;
         toast("Account created, but email confirmation is still required in Supabase settings — turn off \"Confirm email\" under Authentication → Providers → Email.");
         return;
       }
@@ -869,52 +880,84 @@
     $("#adminEntryLink").hidden = !state.isAdmin;
   }
 
+  // Single routing point for "this browser has an authenticated user": used both by the
+  // session-restore on load AND by onAuthStateChange when an OAuth redirect lands its token.
+  // The authRouted guard makes it safe for both to fire -- whichever runs first wins.
+  function routeAuthedUser(session){
+    if(state.authRouted) return;
+    state.authRouted = true;
+    state.realUserId = session.user.id;
+    sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
+      if(error || !profile){
+        // An authenticated user with no profile row almost always means a previous signup's
+        // backend save failed silently (see completeOnboarding) -- if that attempt's draft
+        // survived (it's only cleared on success), retry it transparently before bothering
+        // the user with anything at all.
+        let draft = null;
+        try{ draft = JSON.parse(sessionStorage.getItem(OB_DRAFT_KEY) || "null"); }catch(e){}
+        if(draft && draft.username){
+          restoreOnboardingDraftIfAny();
+          completeOnboarding(session.user.id);
+          return;
+        }
+        // A user who signed up with email first and Google later has provider:"email" but
+        // "google" in the providers list -- check both, or returning Google users get the
+        // longer form for no reason.
+        const appMeta = session.user.app_metadata || {};
+        const isGoogle = appMeta.provider === "google" || (appMeta.providers || []).includes("google");
+        if(isGoogle){
+          // Signed in via Google but no profile row yet -- just the 3 essentials, then a choice.
+          const meta = session.user.user_metadata || {};
+          state.ob.googleAuthed = true;
+          state.ob.username = meta.full_name || meta.name || "Merj user";
+          $("#obEmail").value = session.user.email || "";
+          $("#obEmail").disabled = true;
+          $("#obUsername").value = state.ob.username;
+          $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
+          showScreen("googleQuickStart");
+        } else {
+          // Password account exists but its profile never saved and there's no local draft
+          // left to retry with -- have them re-enter it. They already have an account, so
+          // skip the password step and save straight to their existing user id.
+          state.ob.resumingAccount = true;
+          $("#obEmail").value = session.user.email || "";
+          $("#obEmail").disabled = true;
+          updateOnboardUI();
+          showScreen("onboarding");
+          toast("Your last signup didn't finish saving — let's get your profile in.");
+        }
+        return;
+      }
+      hydrateStateFromProfile(profile);
+      loadRealMatches();
+      // Re-fetch Discover now that we know who "me" is, so the user's own profile is excluded.
+      loadRealProfiles();
+      // A logged-in user should never be stranded on the marketing/login page -- take them
+      // straight into the app. (Deeper screens are left alone: mid-app this is a no-op.)
+      if(state.screen === "landing" || state.screen === "login") showScreen("discover");
+    }).catch(()=>{});
+  }
+
   function restoreRealSessionIfAny(){
     if(!sb) return;
     sb.auth.getSession().then(({ data })=>{
-      const session = data && data.session;
-      if(!session) return;
-      state.realUserId = session.user.id;
-      sb.from("profiles").select("*").eq("id", session.user.id).single().then(({ data: profile, error })=>{
-        if(error || !profile){
-          // An authenticated user with no profile row almost always means a previous signup's
-          // backend save failed silently (see completeOnboarding) -- if that attempt's draft
-          // survived (it's only cleared on success), retry it transparently before bothering
-          // the user with anything at all.
-          let draft = null;
-          try{ draft = JSON.parse(sessionStorage.getItem(OB_DRAFT_KEY) || "null"); }catch(e){}
-          if(draft && draft.username){
-            restoreOnboardingDraftIfAny();
-            completeOnboarding(session.user.id);
-            return;
-          }
-          const isGoogle = session.user.app_metadata && session.user.app_metadata.provider === "google";
-          if(isGoogle){
-            // Signed in via Google but no profile row yet -- just the 3 essentials, then a choice.
-            const meta = session.user.user_metadata || {};
-            state.ob.googleAuthed = true;
-            state.ob.username = meta.full_name || meta.name || "Merj user";
-            $("#obEmail").value = session.user.email || "";
-            $("#obEmail").disabled = true;
-            $("#obUsername").value = state.ob.username;
-            $("#obPhoneHint").textContent = "Optional — already verified via Google, so this is just profile info.";
-            showScreen("googleQuickStart");
-          } else {
-            // Password account exists but its profile never saved and there's no local draft
-            // left to retry with -- have them re-enter it. They already have an account, so
-            // skip the password step and save straight to their existing user id.
-            state.ob.resumingAccount = true;
-            $("#obEmail").value = session.user.email || "";
-            $("#obEmail").disabled = true;
-            showScreen("onboarding");
-            toast("Your last signup didn't finish saving — let's get your profile in.");
-          }
-          return;
-        }
-        hydrateStateFromProfile(profile);
-        loadRealMatches();
-      }).catch(()=>{});
+      if(data && data.session) routeAuthedUser(data.session);
     }).catch(()=>{});
+    // Safety net for the OAuth return leg: if the redirect token is processed after our
+    // getSession() call (or mid-session), this still routes the user correctly.
+    sb.auth.onAuthStateChange((event, session)=>{
+      if((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) routeAuthedUser(session);
+    });
+  }
+
+  // If Google bounces back with an error (user cancelled, misconfigured redirect, etc.), say
+  // so plainly instead of silently dumping them on the landing page with a cryptic URL hash.
+  function surfaceOAuthErrorIfAny(){
+    if(!/[#&]error(_description)?=/.test(location.hash)) return;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const desc = params.get("error_description") || params.get("error") || "it was cancelled or failed";
+    showInfo("Google sign-in didn't complete: " + decodeURIComponent(desc).replace(/\+/g, " ") + ". Try again, or sign up with email and password instead.");
+    history.replaceState(null, "", location.pathname + location.search);
   }
 
   /* ---------------- Google quick start: 3 essentials, then a real choice ---------------- */
@@ -1001,23 +1044,16 @@
     $("#loginRealSubmitBtn").disabled = true;
     $("#loginRealSubmitBtn").textContent = "Logging in…";
     $("#loginRealError").textContent = "";
+    state.authRouted = true; // hold the generic route handler off until this flow decides
     sb.auth.signInWithPassword({ email, password }).then(({ data, error })=>{
       $("#loginRealSubmitBtn").disabled = false;
       $("#loginRealSubmitBtn").textContent = "Log in";
-      if(error){ $("#loginRealError").textContent = "Wrong email or password."; return; }
-      state.realUserId = data.user.id;
-      sb.from("profiles").select("*").eq("id", data.user.id).single().then(({ data: profile, error: pErr })=>{
-        if(pErr || !profile){
-          toast("Logged in, but no profile found — let's finish setting one up.");
-          showScreen("onboarding");
-          return;
-        }
-        hydrateStateFromProfile(profile);
-        toast(`Welcome back, ${profile.username}!`);
-        loadRealProfiles();
-        loadRealMatches();
-        showScreen("discover");
-      });
+      if(error){ state.authRouted = false; $("#loginRealError").textContent = "Wrong email or password."; return; }
+      // Same routing as a restored session: profile -> Discover; missing profile -> the
+      // self-healing resume path, not a dead-end.
+      state.authRouted = false;
+      routeAuthedUser(data.session);
+      toast("Welcome back!");
     });
   });
 
@@ -1428,8 +1464,116 @@
         else { const who = state.matches.find(x=>x.id===localId); toast(`New message from ${who ? who.name : "a match"}`); }
         if(state.screen === "matches") renderMatches();
       })
+      // Call signalling rides the same channel -- see the WebRTC section for the caller side.
+      .on("broadcast", { event: "call-ring" },    p=> handleIncomingRing(matchId, localId, p.payload))
+      .on("broadcast", { event: "call-cancel" },  ()=> handleRingCancelled(matchId))
+      .on("broadcast", { event: "call-decline" }, ()=> handleCallDeclined(matchId, localId))
       .subscribe();
   }
+
+  /* ---------------- Incoming match calls (codeless) ---------------- */
+  function handleIncomingRing(matchId, localId, payload){
+    if(!payload || !payload.peerId) return;
+    const who = state.matches.find(m=>m.id===localId);
+    const name = (who && who.name) || payload.fromName || "Your match";
+    const kind = payload.video ? "video" : "audio";
+    // Busy on another call, mid-outgoing-call setup, or already looking at a ring: auto-decline
+    // rather than interrupt.
+    if(state.rtc.call || state.rtc.localStream || state.rtc.incoming || state.rtc.outgoingPending){
+      sendCallSignal(matchId, "call-decline");
+      return;
+    }
+    if(!shouldAcceptCall(name)){
+      sendCallSignal(matchId, "call-decline");
+      logBlockedCall(name, kind, localId);
+      return;
+    }
+    const ring = { matchId, localId, peerId: payload.peerId, video: !!payload.video, name };
+    state.rtc.incoming = ring;
+    $("#incomingCallText").textContent = `${name} is ${kind} calling…`;
+    $("#incomingCallOverlay").hidden = false;
+    // Failsafe: if the caller vanishes (tab closed, connection dropped) no call-cancel ever
+    // arrives, so expire the ring ourselves rather than leaving a permanent overlay that
+    // also makes the user look "busy" to everyone else. Slightly longer than the caller's
+    // own 30s ring timeout so their cancel normally wins the race.
+    if(state.rtc.incomingTimeout) clearTimeout(state.rtc.incomingTimeout);
+    state.rtc.incomingTimeout = setTimeout(()=>{
+      if(state.rtc.incoming !== ring) return; // already answered, declined, or replaced
+      dismissIncomingRing(`Missed ${kind} call from ${name}.`);
+    }, 35000);
+  }
+
+  // Single teardown for an incoming ring that was never answered, whichever way it ended.
+  function dismissIncomingRing(message){
+    if(state.rtc.incomingTimeout){ clearTimeout(state.rtc.incomingTimeout); state.rtc.incomingTimeout = null; }
+    state.rtc.incoming = null;
+    $("#incomingCallOverlay").hidden = true;
+    if(message) toast(message);
+  }
+
+  function handleRingCancelled(matchId){
+    const inc = state.rtc.incoming;
+    if(!inc || inc.matchId !== matchId) return;
+    dismissIncomingRing(`Missed ${inc.video ? "video" : "audio"} call from ${inc.name}.`);
+  }
+
+  function handleCallDeclined(matchId, localId){
+    if(state.rtc.ringingMatchId !== matchId) return;
+    const who = state.matches.find(m=>m.id===localId);
+    state.rtc.ringingMatchId = null; // already declined -- nothing to cancel on their side
+    endCall(false);
+    toast(`${(who && who.name) || "They"} can't take the call right now.`);
+  }
+
+  $("#incomingAcceptBtn").addEventListener("click", ()=>{
+    const inc = state.rtc.incoming;
+    if(!inc) return;
+    if(state.rtc.incomingTimeout){ clearTimeout(state.rtc.incomingTimeout); state.rtc.incomingTimeout = null; }
+    $("#incomingCallOverlay").hidden = true;
+    const who = state.matches.find(m=>m.id===inc.localId);
+    state.rtc.activeCallProfileName = inc.name;
+    state.rtc.activeCallProfileId = inc.localId;
+    state.rtc.connected = false;
+    state.rtc.wasVideo = inc.video;
+    state.rtc.skipFaceCheck = !!(who && who.has18 && state.ageVerified);
+    state.rtc.isBlindDate = false;
+    $("#callReportBtn").hidden = true;
+    $("#callFootnote").hidden = false;
+    // Same abort guard as the outgoing side: the caller can give up (or we can hang up) while
+    // the camera prompt is still open, and answering afterwards would connect a call nobody
+    // is waiting for -- with a live camera and no visible UI to stop it.
+    const myGen = ++state.rtc.generation;
+    const stale = ()=> myGen !== state.rtc.generation;
+    openCallOverlay(inc.video, `Connecting to ${inc.name}…`);
+    navigator.mediaDevices.getUserMedia({ audio:true, video: inc.video }).then(stream=>{
+      if(stale()){ stream.getTracks().forEach(t=>t.stop()); return null; }
+      state.rtc.localStream = stream;
+      $("#localVideo").srcObject = stream;
+      $("#localVideo").style.display = inc.video ? "block" : "none";
+      return ensurePeer();
+    }).then(peer=>{
+      if(!peer) return;
+      if(stale()) return;
+      const call = peer.call(inc.peerId, state.rtc.localStream, { metadata:{ video: inc.video, callerName: state.ob.username || "Someone" } });
+      wireCall(call, inc.video);
+      state.rtc.incoming = null;
+    }).catch(err=>{
+      if(stale()) return;
+      const msg = (err && err.name === "NotAllowedError")
+        ? "Merj needs camera and microphone access to answer — allow it in your browser's address bar."
+        : "Couldn't answer: " + ((err && err.message) || "unknown error");
+      sendCallSignal(inc.matchId, "call-decline");
+      endCall(false); // stops any stream we already opened and clears the overlay
+      showInfo(msg);
+    });
+  });
+
+  $("#incomingDeclineBtn").addEventListener("click", ()=>{
+    const inc = state.rtc.incoming;
+    if(!inc) return;
+    sendCallSignal(inc.matchId, "call-decline");
+    dismissIncomingRing();
+  });
 
   function renderMatches(){
     const list = $("#matchesList");
@@ -1515,47 +1659,66 @@
   }
 
   /* ---------------- Real WebRTC calling ---------------- */
-  // Signalling uses PeerJS's free public broker (no server of ours). In production, matched
-  // users' peer IDs would be exchanged automatically over our own backend the instant both tap
-  // "call" — here, since there is no backend, one side shares a room code (or the "open other
-  // side" test link) to simulate that handshake while still using genuine WebRTC media underneath.
-  function randomRoomCode(){ return "merj-" + Math.random().toString(36).slice(2, 8); }
+  // Media goes peer-to-peer via PeerJS's free public signalling broker (no server of ours ever
+  // touches call content). The handshake between matched users is now fully automatic: the
+  // caller spins up a broker-assigned peer, then "rings" the other side over the match's
+  // existing Supabase Realtime channel with that peer id in the payload. The callee's client
+  // shows Accept/Decline, and on accept dials the caller's peer directly. No codes, ever --
+  // both people already agreed to be matched, which is the only consent gate that matters here.
 
+  // Both peer factories must SETTLE on failure, not hang: an unreachable broker fires "error"
+  // and never "open", and a promise that never settles leaves the caller staring at a frozen
+  // "calling…" screen with a live camera and no way to know anything went wrong.
+  const PEER_OPEN_TIMEOUT = 12000;
+  function openPeer(){
+    return new Promise((resolve, reject)=>{
+      if(typeof Peer === "undefined"){ reject(new Error("the call system couldn't load — check your connection or ad blocker")); return; }
+      const peer = new Peer();
+      let settled = false;
+      const timer = setTimeout(()=>{
+        if(settled) return;
+        settled = true;
+        try{ peer.destroy(); }catch(e){}
+        reject(new Error("couldn't reach the call service — try again in a moment"));
+      }, PEER_OPEN_TIMEOUT);
+      peer.on("open", ()=>{
+        if(settled) return;
+        settled = true; clearTimeout(timer); resolve(peer);
+      });
+      peer.on("error", (err)=>{
+        console.error("Peer error", err);
+        if(settled) return; // post-connection errors are handled by the call's own close handling
+        settled = true; clearTimeout(timer);
+        try{ peer.destroy(); }catch(e){}
+        reject(new Error("call connection error (" + err.type + ")"));
+      });
+    });
+  }
+
+  // Outbound-only peer for the callee side (never receives unsolicited calls -- nobody knows
+  // its broker-assigned id except the caller it chooses to dial).
   function ensurePeer(){
     if(state.rtc.peer && !state.rtc.peer.destroyed) return Promise.resolve(state.rtc.peer);
-    return new Promise((resolve, reject)=>{
-      if(typeof Peer === "undefined"){ reject(new Error("PeerJS failed to load (no internet?)")); return; }
-      const peer = new Peer(randomRoomCode());
-      peer.on("open", ()=> resolve(peer));
-      peer.on("error", (err)=> { console.error("Peer error", err); toast("Call connection error: " + err.type); });
-      peer.on("call", (incomingCall)=>{
-        const wantVideo = incomingCall.metadata && incomingCall.metadata.video;
-        const callerName = (incomingCall.metadata && incomingCall.metadata.callerName) || "Unknown caller";
-        if(!shouldAcceptCall(callerName)){
-          incomingCall.close();
-          logBlockedCall(callerName, wantVideo ? "video" : "audio", incomingCall.peer);
-          return;
-        }
-        navigator.mediaDevices.getUserMedia({ audio:true, video: !!wantVideo }).then(stream=>{
-          state.rtc.localStream = stream;
-          state.rtc.activeCallProfileName = callerName;
-          state.rtc.wasVideo = !!wantVideo;
-          $("#localVideo").srcObject = stream;
-          incomingCall.answer(stream);
-          wireCall(incomingCall, wantVideo);
-          openCallOverlay(wantVideo, "Incoming call");
-          $("#callRoomBox").hidden = true;
-        }).catch(()=> toast("Camera/mic permission is needed to answer."));
-      });
-      state.rtc.peer = peer;
-    });
+    return openPeer().then(peer=>{ state.rtc.peer = peer; return peer; });
+  }
+
+  // Fresh per-call peer for the caller side; its broker-assigned id is what gets sent in the
+  // ring signal. Destroyed in endCall so each call gets a clean identity.
+  function createHostPeer(){
+    return openPeer().then(peer=>{ state.rtc.hostPeer = peer; return peer; });
+  }
+
+  // Ring/decline/cancel signals ride the match's existing Realtime channel (the same one that
+  // delivers live chat messages), so there's no extra infrastructure and no polling.
+  function sendCallSignal(matchId, event, payload){
+    const ch = state.messageChannels[matchId];
+    if(ch) ch.send({ type: "broadcast", event, payload: payload || {} });
   }
 
   function wireCall(call, isVideo){
     state.rtc.call = call;
     call.on("stream", remoteStream=>{
       $("#remoteVideo").srcObject = remoteStream;
-      $("#callRoomBox").hidden = true;
       $("#callTitle").textContent = "Connected";
       state.rtc.connected = true;
       state.rtc.wasVideo = isVideo;
@@ -1582,51 +1745,89 @@
     state.rtc.wasVideo = isVideo;
     state.rtc.skipFaceCheck = !!(profile.has18 && state.ageVerified); // consensual 18+ pairing: face-required check doesn't apply
     state.rtc.isBlindDate = false;
-    openCallOverlay(isVideo, `${isVideo ? "Video" : "Audio"} calling ${profile.name}…`);
-    $("#callRoomBox").hidden = false;
-    $("#roomCodeDisplay").value = "generating…";
     $("#callReportBtn").hidden = true;
     $("#callFootnote").hidden = false;
+    openCallOverlay(isVideo, `${isVideo ? "Video" : "Audio"} calling ${profile.name}…`);
+
+    const isRealCall = !!(profile.realMatchId && state.realUserId && sb);
+    if(!isRealCall){
+      // Demo persona -- nobody is actually on the other end. Ring briefly, then say so
+      // honestly instead of pretending a connection is possible. outgoingPending marks us
+      // busy so a real ring arriving mid-fake-ring doesn't collide with it.
+      state.rtc.outgoingPending = true;
+      state.rtc.ringTimeout = setTimeout(()=>{
+        endCall(false);
+        showInfo(`${profile.name} didn't answer — they may not be online right now. Send them a message instead.`);
+      }, 7000);
+      return;
+    }
+
+    // Everything below is async, and the user can hit End (or the browser's own permission
+    // prompt can sit there) at any point. endCall bumps state.rtc.generation, so each step
+    // re-checks it and bails out cleanly rather than resurrecting a cancelled call -- without
+    // this, cancelling during the camera prompt still rang the other person and answered them
+    // with a live camera and no visible call UI.
+    const myGen = ++state.rtc.generation;
+    const stale = ()=> myGen !== state.rtc.generation;
+    state.rtc.outgoingPending = true;
 
     navigator.mediaDevices.getUserMedia({ audio:true, video:isVideo })
       .then(stream=>{
+        if(stale()){ stream.getTracks().forEach(t=>t.stop()); return null; }
         state.rtc.localStream = stream;
         $("#localVideo").srcObject = stream;
         $("#localVideo").style.display = isVideo ? "block" : "none";
-        return ensurePeer();
+        return createHostPeer();
       })
       .then(peer=>{
-        $("#roomCodeDisplay").value = peer.id;
-        state.rtc.roomCode = peer.id;
-        if(navigator.clipboard){
-          navigator.clipboard.writeText(peer.id).then(()=> toast("Connection code copied — send it to them to connect."));
-        }
+        if(!peer) return;
+        if(stale()){ try{ peer.destroy(); }catch(e){} state.rtc.hostPeer = null; return; }
+        peer.on("call", incoming=>{
+          // Answer exactly one dial-back, and only while this call is still live: never
+          // auto-answer a second connection to the same short-lived peer id.
+          if(stale() || state.rtc.call || !state.rtc.localStream){ try{ incoming.close(); }catch(e){} return; }
+          // The callee accepted and dialled us back -- answer with our already-open media.
+          clearTimeout(state.rtc.ringTimeout);
+          state.rtc.ringTimeout = null;
+          incoming.answer(state.rtc.localStream);
+          wireCall(incoming, isVideo);
+        });
+        state.rtc.ringingMatchId = profile.realMatchId;
+        sendCallSignal(profile.realMatchId, "call-ring", {
+          peerId: peer.id, video: isVideo, fromName: state.ob.username || "Your match",
+        });
+        $("#callTitle").textContent = `Ringing ${profile.name}…`;
+        state.rtc.ringTimeout = setTimeout(()=>{
+          if(stale()) return;
+          endCall(false); // endCall broadcasts the cancel for an unanswered ring
+          showInfo(`${profile.name} didn't pick up — they may not have Merj open right now. Send them a message instead.`);
+        }, 30000);
       })
       .catch(err=>{
-        toast("Couldn't start the call: " + err.message);
-        $("#callOverlay").hidden = true;
+        if(stale()) return;
+        const msg = (err && err.name === "NotAllowedError")
+          ? "Merj needs camera and microphone access to call — allow it in your browser's address bar, then try again."
+          : "Couldn't start the call: " + ((err && err.message) || "unknown error");
+        endCall(false);
+        showInfo(msg);
       });
   }
 
-  function joinRoom(code){
-    if(!code) { toast("Enter a room code first."); return; }
-    const isVideo = $("#videoStage").style.display !== "none";
-    state.rtc.activeCallProfileId = null; // ad-hoc connection, not tied to a known profile
-    navigator.mediaDevices.getUserMedia({ audio:true, video:isVideo })
-      .then(stream=>{
-        state.rtc.localStream = stream;
-        $("#localVideo").srcObject = stream;
-        return ensurePeer();
-      })
-      .then(peer=>{
-        const call = peer.call(code.trim(), state.rtc.localStream, { metadata:{ video:isVideo, callerName: state.ob.username || "Someone" } });
-        wireCall(call, isVideo);
-        $("#callTitle").textContent = "Connecting…";
-      })
-      .catch(err=> toast("Couldn't connect: " + err.message));
-  }
-
   function endCall(logHistory){
+    // Invalidate any in-flight async call setup (getUserMedia prompt, peer handshake) so it
+    // can't complete behind our back after the user has ended the call.
+    state.rtc.generation++;
+    state.rtc.outgoingPending = false;
+    // Ending an unanswered outgoing ring tells the other side to stop showing "incoming call".
+    if(state.rtc.ringingMatchId && !state.rtc.connected){
+      sendCallSignal(state.rtc.ringingMatchId, "call-cancel", {});
+    }
+    state.rtc.ringingMatchId = null;
+    if(state.rtc.ringTimeout){ clearTimeout(state.rtc.ringTimeout); state.rtc.ringTimeout = null; }
+    if(state.rtc.incomingTimeout){ clearTimeout(state.rtc.incomingTimeout); state.rtc.incomingTimeout = null; }
+    if(state.rtc.hostPeer){ try{ state.rtc.hostPeer.destroy(); }catch(e){} state.rtc.hostPeer = null; }
+    state.rtc.incoming = null;
+    $("#incomingCallOverlay").hidden = true;
     if(state.rtc.call) state.rtc.call.close();
     if(state.rtc.localStream) state.rtc.localStream.getTracks().forEach(t=>t.stop());
     if(state.blindPeer){ state.blindPeer.destroy(); state.blindPeer = null; }
@@ -1729,7 +1930,6 @@
         $("#localVideo").srcObject = stream;
         wireCall(call, isVideo);
         openCallOverlay(isVideo, "Connecting…");
-        $("#callRoomBox").hidden = true;
         $("#callFootnote").hidden = true;
         $("#callReportBtn").hidden = false;
         showScreen("discover");
@@ -1785,16 +1985,6 @@
   $("#audioCallBtn").addEventListener("click", ()=> startCall("audio"));
   $("#videoCallBtn").addEventListener("click", ()=> startCall("video"));
   $("#callEndBtn").addEventListener("click", ()=> endCall(true));
-  $("#copyRoomBtn").addEventListener("click", ()=>{
-    const code = $("#roomCodeDisplay").value;
-    if(navigator.clipboard) navigator.clipboard.writeText(code).then(()=> toast("Room code copied."));
-  });
-  $("#openOtherSideBtn").addEventListener("click", ()=>{
-    const code = $("#roomCodeDisplay").value;
-    if(!code || code === "generating…"){ toast("Wait for your room code to generate first."); return; }
-    window.open(location.origin + location.pathname + "?joinRoom=" + encodeURIComponent(code), "_blank");
-  });
-  $("#joinRoomBtn").addEventListener("click", ()=> joinRoom($("#joinCodeInput").value));
   $("#muteBtn").addEventListener("click", (e)=>{
     if(!state.rtc.localStream) return;
     const track = state.rtc.localStream.getAudioTracks()[0];
@@ -1873,15 +2063,6 @@
     if(state.rtc.countdownInterval){ clearInterval(state.rtc.countdownInterval); state.rtc.countdownInterval = null; }
     $("#faceWarning").hidden = true;
   }
-
-  // A browser tab opened via "open other side" auto-joins the shared room immediately.
-  (function autoJoinFromUrl(){
-    const code = new URLSearchParams(location.search).get("joinRoom");
-    if(!code) return;
-    openCallOverlay(true, "Joining call…");
-    $("#callRoomBox").hidden = true;
-    joinRoom(code);
-  })();
 
   /* ---------------- Info overlay ---------------- */
   function showInfo(text){
@@ -2432,8 +2613,8 @@
     return state.callPermission === "everyone";
   }
 
-  function logBlockedCall(name, kind, code){
-    state.callRequestLog.unshift({ name, kind, code, at: new Date() });
+  function logBlockedCall(name, kind, localId){
+    state.callRequestLog.unshift({ name, kind, localId, at: new Date() });
     toast(`Missed ${kind} call from ${name} — blocked by your call settings.`);
     if(state.screen === "activity") renderActivity();
   }
@@ -2455,7 +2636,11 @@
           <button class="btn btn--ghost btn--sm" data-msgback>Message</button>
           <button class="btn btn--ghost btn--sm" data-approve>Approve</button>
         </div>`;
-      row.querySelector("[data-callback]").addEventListener("click", ()=> joinRoom(entry.code));
+      row.querySelector("[data-callback]").addEventListener("click", ()=>{
+        if(!state.matches.find(m=>m.id===entry.localId)){ toast("You're no longer matched with them."); return; }
+        state.activeChatId = entry.localId;
+        startCall(entry.kind);
+      });
       row.querySelector("[data-msgback]").addEventListener("click", ()=> messageFromLog(entry));
       row.querySelector("[data-approve]").addEventListener("click", ()=>{
         state.approvedCallers.add(entry.name);
@@ -2468,12 +2653,8 @@
   }
 
   function messageFromLog(entry){
-    const pseudoId = "peer-" + entry.code;
-    if(!state.chats[pseudoId]) state.chats[pseudoId] = [];
-    if(!state.matches.find(m=>m.id===pseudoId)){
-      state.matches.unshift({ id: pseudoId, name: entry.name, initial: (entry.name[0]||"?").toUpperCase(), distance:0, reasons:[], bio:"" });
-    }
-    openChat(pseudoId);
+    if(!state.matches.find(m=>m.id===entry.localId)){ toast("You're no longer matched with them."); return; }
+    openChat(entry.localId);
   }
 
   /* ---------------- Post-call re-verification ---------------- */
@@ -2782,11 +2963,24 @@
   /* ---------------- Init ---------------- */
   buildPhotoGrid();
   $("#photoGrid").addEventListener("change", onPhotoSelected);
+  $("#demoLoginToggle").addEventListener("click", ()=>{
+    const panel = $("#demoLoginPanel");
+    panel.hidden = !panel.hidden;
+  });
+  // Real logout: previously this button only navigated to the landing screen while the
+  // Supabase session stayed alive, so a reload silently logged the user straight back in.
+  $("#logoutBtn").addEventListener("click", ()=>{
+    try{ sessionStorage.removeItem(OB_DRAFT_KEY); }catch(e){}
+    const finish = ()=> location.replace(location.pathname);
+    if(sb && state.realUserId) sb.auth.signOut().then(finish).catch(finish);
+    else finish();
+  });
   updateOnboardUI();
   updateSwipeMeter();
   updateFilterSummary();
   restoreOnboardingDraftIfAny();
   loadRealProfiles();
+  surfaceOAuthErrorIfAny();
   restoreRealSessionIfAny();
   captureReferralCode();
 })();
